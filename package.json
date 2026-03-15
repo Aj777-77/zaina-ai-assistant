@@ -7,11 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:firebase": "tsx scripts/test-firebase.ts"
+    "test:firebase": "tsx scripts/test-firebase.ts",
+    "test:openai": "tsx scripts/test-openai.ts",
+    "test:puppeteer": "tsx scripts/test-puppeteer.ts"
   },
   "dependencies": {
     "firebase-admin": "^13.7.0",
     "next": "16.1.6",
+    "openai": "^6.29.0",
+    "puppeteer": "^24.39.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
