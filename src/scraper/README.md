@@ -21,9 +21,43 @@ Telecom-specific scraping logic:
 - `scrapePlans()` - Extract plan products
 - `searchProduct()` - Search functionality
 
+### `zain-scraper.ts`
+**Zain Bahrain e-shop scraper (eshop.bh.zain.com)**:
+- `ZainBahrainScraper` class - Specialized scraper for Zain Bahrain
+- `scrapeMainPage()` - Scrape products from main page
+- `scrapeByCategory()` - Scrape specific categories
+- `searchProducts()` - Search for products
+- `getCategories()` - Get available product categories
+- Anti-detection measures (custom headers, realistic user agent)
+- Extracts: brand, name, price, monthly/cash prices, savings, images, URLs
+
 ## Usage Examples
 
-### Basic Scraping
+### Zain Bahrain Scraper (Recommended)
+```typescript
+import { ZainBahrainScraper, scrapeZainBahrain } from '@/scraper/zain-scraper';
+
+// Quick scrape
+const products = await scrapeZainBahrain();
+console.log(`Found ${products.length} products`);
+
+// Advanced usage with class
+const scraper = new ZainBahrainScraper();
+await scraper.initialize();
+
+// Get all products
+const allProducts = await scraper.scrapeMainPage();
+
+// Get categories
+const categories = await scraper.getCategories();
+
+// Search for specific products
+const searchResults = await scraper.searchProducts('iPhone');
+
+await scraper.close();
+```
+
+### Generic Telecom Scraper
 ```typescript
 import { TelecomScraper } from '@/scraper/telecom-scraper';
 
@@ -45,9 +79,13 @@ await scraper.close();
 
 ## Testing
 
-Run the test suite:
+Run the test suites:
 ```bash
+# Test generic Puppeteer functionality
 npm run test:puppeteer
+
+# Test Zain Bahrain scraper
+npm run test:zain
 ```
 
 ## Next Steps
