@@ -1,28 +1,60 @@
-# Web Scraper
+# Web Scraper Module
 
-This directory contains Puppeteer scripts for web scraping telecom e-commerce websites.
+## Overview
+This module provides web scraping functionality for telecom e-commerce websites using Puppeteer. It can extract product information including phones, plans, and accessories from various telecom providers.
 
-## Purpose
+## Files
 
-- Scrape product information from telecom websites
-- Extract pricing, specifications, and availability
-- Gather real-time data for the AI assistant
+### `browser.ts`
+Core browser management utilities:
+- `getBrowser()` - Initialize and reuse browser instance
+- `createPage()` - Create new page with optimized settings
+- `navigateToUrl()` - Navigate with retry logic
+- `extractText()` - Extract text content from selectors
+- `extractMultiple()` - Extract multiple elements
+- `takeScreenshot()` - Debug helper for screenshots
 
-## Structure
+### `telecom-scraper.ts`
+Telecom-specific scraping logic:
+- `TelecomScraper` class for structured scraping
+- `scrapePhones()` - Extract phone products
+- `scrapePlans()` - Extract plan products
+- `searchProduct()` - Search functionality
 
-- **scrapers/**: Individual scraper modules for different websites
-- **utils/**: Shared scraping utilities and helpers
-- **config/**: Scraper configuration and settings
+## Usage Examples
 
-## Dependencies
-
-- Puppeteer for browser automation
-- Cheerio for HTML parsing (optional)
-
-## Usage
-
+### Basic Scraping
 ```typescript
-import { scrapeProducts } from '@/scraper/scrapers/example-site';
+import { TelecomScraper } from '@/scraper/telecom-scraper';
 
-const products = await scrapeProducts('search-query');
+const scraper = new TelecomScraper();
+await scraper.initialize();
+
+const phones = await scraper.scrapePhones(
+  'https://example-telecom.com/phones',
+  {
+    container: '.product-card',
+    name: '.product-title',
+    price: '.product-price',
+    description: '.product-desc'
+  }
+);
+
+await scraper.close();
 ```
+
+## Testing
+
+Run the test suite:
+```bash
+npm run test:puppeteer
+```
+
+## Next Steps
+
+1. Identify target telecom websites
+2. Analyze their HTML structure
+3. Create custom selector configurations
+4. Set up scheduled scraping jobs
+5. Integrate with OpenAI for product analysis
+6. Store results in Firebase Firestore
