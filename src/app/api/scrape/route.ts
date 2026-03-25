@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Scraped ${products.length} products`);
 
     // Save to Firestore if requested
-    let savedProducts = [];
+    let savedProducts: any[] = [];
     if (saveToDb && products.length > 0) {
       const db = getDb();
       const productsRef = db.collection('products');
