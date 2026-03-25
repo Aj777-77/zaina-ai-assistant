@@ -10,7 +10,8 @@
     "test:firebase": "tsx scripts/test-firebase.ts",
     "test:openai": "tsx scripts/test-openai.ts",
     "test:puppeteer": "tsx scripts/test-puppeteer.ts",
-    "test:zain": "tsx scripts/test-zain-scraper.ts"
+    "test:zain": "tsx scripts/test-zain-scraper.ts",
+    "test:api": "tsx scripts/test-api-routes.ts"
   },
   "dependencies": {
     "firebase-admin": "^13.7.0",
