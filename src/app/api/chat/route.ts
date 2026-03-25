@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createChatCompletion, createStreamingChatCompletion } from '@/lib/openai';
+import { getDb } from '@/lib/firebase';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Add system message for Zaina AI personality
+    // Fetch real products from Firebase
+    const db = getDb();
+    const productsSnapshot = await db.collection('products').limit(50).get();
+    const products = productsSnapshot.docs.map(doc => doc.data());
+
+    // Build product context
+    let productContext = '';
+    if (products.length > 0) {
+      productContext = '\n\nAVAILABLE PRODUCTS:\n' + products.map(p =>
+        `- ${p.brand} ${p.name}: ${p.price}${p.monthlyPrice ? ` (or ${p.monthlyPrice})` : ''}${p.savings ? ` - ${p.savings}` : ''}`
+      ).join('\n');
+    }
+
+    // Add system message for Zaina AI personality with real product data
     const systemMessage = {
       role: 'system' as const,
       content: `You are Zaina, a friendly and helpful AI shopping assistant for Zain Bahrain's e-commerce store.
@@ -29,7 +43,8 @@ Guidelines:
 - Keep responses concise and helpful
 - Ask clarifying questions if needed
 - Recommend products available on eshop.bh.zain.com
-- Focus on popular brands like Apple, Samsung, and other devices available at Zain`
+- Focus on popular brands like Apple, Samsung, and other devices available at Zain
+- IMPORTANT: Use the REAL product data provided below. Never make up prices or products.${productContext}`
     };
 
     const fullMessages = [systemMessage, ...messages];
