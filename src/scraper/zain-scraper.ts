@@ -14,6 +14,55 @@ export interface ZainProduct {
   scrapedAt: Date;
 }
 
+export interface ProductCategory {
+  category: string;   // Firestore category value
+  label: string;      // Human-readable label
+  url: string;
+}
+
+export const PRODUCT_CATEGORIES: ProductCategory[] = [
+  {
+    category: 'smartphones',
+    label: 'Smartphones',
+    url: 'https://eshop.bh.zain.com/product/smartphones',
+  },
+  {
+    category: 'ipad-tablets-laptops',
+    label: 'iPads, Tablets & Laptops',
+    url: 'https://eshop.bh.zain.com/product/ipad-tablets-laptops',
+  },
+  {
+    category: 'accessories',
+    label: 'Accessories',
+    url: 'https://eshop.bh.zain.com/product/accessories',
+  },
+  {
+    category: 'vouchers',
+    label: 'Vouchers',
+    url: 'https://eshop.bh.zain.com/product/vouchers',
+  },
+  {
+    category: 'home-solution-and-gaming',
+    label: 'Home Solution & Gaming',
+    url: 'https://eshop.bh.zain.com/product/home-solution-and-gaming',
+  },
+  {
+    category: 'gift-cards',
+    label: 'Gift Cards',
+    url: 'https://eshop.bh.zain.com/product/gift-cards',
+  },
+  {
+    category: 'smartwatches',
+    label: 'Smartwatches',
+    url: 'https://eshop.bh.zain.com/product/smartwatches',
+  },
+  {
+    category: 'tv',
+    label: 'TV',
+    url: 'https://eshop.bh.zain.com/product/tv',
+  },
+];
+
 /**
  * Specialized scraper for Zain Bahrain e-shop (eshop.bh.zain.com)
  */
@@ -47,22 +96,91 @@ export class ZainBahrainScraper {
   }
 
   /**
-   * Scrape all products from the main page
+   * Scrape all products from the main page, clicking "Load More" until all products are loaded
    */
-  async scrapeMainPage(): Promise<ZainProduct[]> {
+  async scrapeMainPage(url: string = 'https://eshop.bh.zain.com/'): Promise<ZainProduct[]> {
     if (!this.page) {
       throw new Error('Scraper not initialized. Call initialize() first.');
     }
 
-    console.log('🔍 Scraping Zain Bahrain main page...');
+    console.log(`🔍 Scraping ${url}...`);
 
-    await this.page.goto('https://eshop.bh.zain.com/', {
+    await this.page.goto(url, {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
 
-    // Wait for products to load
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait for product cards to appear in the DOM
+    try {
+      await this.page.waitForSelector('div.card-wrapper', { timeout: 10000 });
+    } catch {
+      // page may not have products — continue anyway
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Keep clicking "Load More" until all products are visible (max 50 clicks)
+    let loadMoreClicks = 0;
+    while (loadMoreClicks < 50) {
+      // Scroll to bottom so the button is in view
+      await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const urlBefore = this.page.url();
+
+      // Only click <button> elements (never <a> tags which navigate away)
+      const clicked = await this.page.evaluate(() => {
+        const countBefore = document.querySelectorAll('div.card-wrapper').length;
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const btn = buttons.find(el => {
+          const text = el.textContent?.trim().toLowerCase() || '';
+          return (
+            text === 'load more' ||
+            text === 'show more' ||
+            text === 'view more' ||
+            text === 'more products' ||
+            text.includes('load more') ||
+            text.includes('show more') ||
+            text.includes('view more')
+          );
+        });
+        if (btn && !btn.disabled) {
+          btn.click();
+          return countBefore;
+        }
+        return -1;
+      });
+
+      if (clicked === -1) break; // no button found
+
+      // Wait for content to load
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // If clicking navigated away from this page, go back and stop
+      const urlAfter = this.page.url();
+      if (urlAfter !== urlBefore) {
+        console.log(`  ↩️  "View More" navigated away — going back to ${urlBefore}`);
+        await this.page.goto(urlBefore, { waitUntil: 'networkidle2', timeout: 30000 });
+        // Wait for product cards to actually appear in the DOM
+        try {
+          await this.page.waitForSelector('div.card-wrapper', { timeout: 10000 });
+        } catch {
+          // no cards appeared — that's fine, we'll extract whatever is there
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        break;
+      }
+
+      // Verify new products actually loaded — if count didn't grow, stop
+      const newCount = await this.page.evaluate(() => document.querySelectorAll('div.card-wrapper').length);
+      if (newCount <= clicked) break;
+
+      loadMoreClicks++;
+      console.log(`  🔁 Load more clicked (${loadMoreClicks}x) — now ${newCount} products`);
+    }
+
+    if (loadMoreClicks > 0) {
+      console.log(`  ✅ Loaded all pages after ${loadMoreClicks} "Load More" clicks`);
+    }
 
     const products = await this.page.evaluate(() => {
       const productCards = Array.from(document.querySelectorAll('div.card-wrapper'));
@@ -117,29 +235,63 @@ export class ZainBahrainScraper {
       });
     });
 
-    console.log(`✅ Scraped ${products.length} products from Zain Bahrain`);
+    console.log(`✅ Scraped ${products.length} products from ${url}`);
 
     return products;
   }
 
   /**
-   * Scrape products by category
+   * Scrape products by category — handles subcategory pages automatically
    */
   async scrapeByCategory(categoryUrl: string): Promise<ZainProduct[]> {
-    if (!this.page) {
-      throw new Error('Scraper not initialized. Call initialize() first.');
+    if (!this.page) throw new Error('Scraper not initialized. Call initialize() first.');
+
+    // First attempt: scrape the category page directly
+    const products = await this.scrapeMainPage(categoryUrl);
+
+    if (products.length > 0) return products;
+
+    // If 0 products found, the page may show subcategory tiles — discover and scrape each
+    console.log(`  ℹ️  No products on ${categoryUrl}, checking for subcategories...`);
+
+    const subcategoryUrls = await this.page.evaluate((baseUrl: string) => {
+      const links = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
+      const base = new URL(baseUrl);
+
+      return links
+        .map(a => a.href)
+        .filter(href => {
+          try {
+            const u = new URL(href);
+            // Must be same origin, under /product/, deeper than the current path, and not the same page
+            return (
+              u.origin === base.origin &&
+              u.pathname.startsWith(base.pathname + '/') &&
+              u.pathname !== base.pathname
+            );
+          } catch {
+            return false;
+          }
+        })
+        .filter((href, i, arr) => arr.indexOf(href) === i); // deduplicate
+    }, categoryUrl);
+
+    if (subcategoryUrls.length === 0) {
+      console.log(`  ⚠️  No subcategories found for ${categoryUrl}`);
+      return [];
     }
 
-    console.log(`🔍 Scraping category: ${categoryUrl}`);
+    console.log(`  📂 Found ${subcategoryUrls.length} subcategories, scraping each...`);
 
-    await this.page.goto(categoryUrl, {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    });
+    const allProducts: ZainProduct[] = [];
 
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    for (const subUrl of subcategoryUrls) {
+      console.log(`    ↳ Scraping subcategory: ${subUrl}`);
+      const subProducts = await this.scrapeMainPage(subUrl);
+      allProducts.push(...subProducts);
+    }
 
-    return await this.scrapeMainPage();
+    return allProducts;
   }
 
   /**

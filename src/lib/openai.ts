@@ -52,8 +52,8 @@ export function getOpenAI(): OpenAI {
  */
 export async function createChatCompletion(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  model: string = 'gpt-4',
-  temperature: number = 0.7
+  model: string = 'gpt-4o',
+  temperature: number = 0.3
 ) {
   const client = getOpenAI();
 
@@ -74,8 +74,8 @@ export async function createChatCompletion(
  */
 export async function createStreamingChatCompletion(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  model: string = 'gpt-4',
-  temperature: number = 0.7
+  model: string = 'gpt-4o',
+  temperature: number = 0.3
 ) {
   const client = getOpenAI();
 

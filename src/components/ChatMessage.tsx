@@ -13,19 +13,19 @@ export default function ChatMessage({ role, content, timestamp }: ChatMessagePro
         className={`max-w-[70%] rounded-lg px-4 py-3 ${
           isUser
             ? 'bg-purple-600 text-white'
-            : 'bg-gray-100 text-gray-900'
+            : 'bg-zinc-900 text-zinc-100 border border-zinc-800'
         }`}
       >
         <div className="flex items-start gap-2">
           {!isUser && (
-            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
+            <div className="shrink-0 w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
               Z
             </div>
           )}
           <div className="flex-1">
             <p className="text-sm whitespace-pre-wrap">{content}</p>
             {timestamp && (
-              <p className={`text-xs mt-1 ${isUser ? 'text-purple-200' : 'text-gray-500'}`}>
+              <p className={`text-xs mt-1 ${isUser ? 'text-purple-200' : 'text-zinc-500'}`}>
                 {timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </p>
             )}

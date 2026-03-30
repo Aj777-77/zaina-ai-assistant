@@ -25,7 +25,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
   };
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4">
+    <div className="border-t border-zinc-800 bg-zinc-950 p-4">
       <div className="max-w-4xl mx-auto flex gap-2">
         <textarea
           value={input}
@@ -34,13 +34,13 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
           placeholder="Ask Zaina about phones, plans, or accessories..."
           disabled={disabled}
           rows={1}
-          className="flex-1 resize-none rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+          className="flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-100 px-4 py-3 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-zinc-800 disabled:cursor-not-allowed"
           style={{ minHeight: '52px', maxHeight: '150px' }}
         />
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:cursor-not-allowed transition-colors"
         >
           {disabled ? 'Sending...' : 'Send'}
         </button>

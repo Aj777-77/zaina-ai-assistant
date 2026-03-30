@@ -20,10 +20,10 @@ export default function QuickActions({ onSelect, disabled = false }: QuickAction
           key={index}
           onClick={() => onSelect(suggestion.query)}
           disabled={disabled}
-          className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-lg hover:bg-purple-50 hover:border-purple-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
+          className="flex items-center gap-2 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 hover:border-purple-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
         >
           <span className="text-xl">{suggestion.icon}</span>
-          <span className="text-sm font-medium text-gray-700">{suggestion.text}</span>
+          <span className="text-sm font-medium text-zinc-200">{suggestion.text}</span>
         </button>
       ))}
     </div>

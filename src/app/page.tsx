@@ -1,9 +1,12 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import QuickActions from '@/components/QuickActions';
+import ChatRegistration from '@/components/chat/ChatRegistration';
+import ZainLogo from '@/lib/Assets/Zain-Logo-White.svg';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -11,7 +14,14 @@ interface Message {
   timestamp: Date;
 }
 
+interface UserData {
+  name: string;
+  phone: string;
+}
+
 export default function Home() {
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -26,6 +36,11 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const handleRegister = (data: UserData) => {
+    setUserData(data);
+    setIsRegistered(true);
+  };
 
   const handleSendMessage = async (content: string) => {
     // Add user message
@@ -48,6 +63,7 @@ export default function Home() {
             role: m.role,
             content: m.content
           })),
+          userData, // Pass userData to store in Backend
           model: 'gpt-3.5-turbo'
         })
       });
@@ -71,7 +87,7 @@ export default function Home() {
         };
         setMessages(prev => [...prev, errorMessage]);
       }
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         role: 'assistant',
         content: 'Sorry, I couldn\'t process your request. Please make sure the server is running.',
@@ -84,64 +100,76 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-zinc-950">
       {/* Header */}
-      <header className="bg-purple-600 text-white shadow-lg">
+      <header className="bg-purple-600 text-white shadow-lg z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white text-purple-600 flex items-center justify-center font-bold text-xl">
-              Z
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Image src={ZainLogo} alt="Zain Logo" className="h-9 w-auto object-contain" priority />
+              <div>
+                <h1 className="text-xl font-bold">Zaina AI Assistant</h1>
+                <p className="text-sm text-purple-100">Zain Bahrain Shopping Assistant</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold">Zaina AI Assistant</h1>
-              <p className="text-sm text-purple-100">Zain Bahrain Shopping Assistant</p>
-            </div>
+            {isRegistered && userData && (
+              <div className="text-sm bg-purple-700/50 px-3 py-1.5 rounded-full border border-purple-500/50">
+                Hello, {userData.name}!
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          {messages.map((message, index) => (
-            <ChatMessage
-              key={index}
-              role={message.role}
-              content={message.content}
-              timestamp={message.timestamp}
-            />
-          ))}
+      {/* Main Content Area */}
+      {!isRegistered ? (
+        <ChatRegistration onRegister={handleRegister} />
+      ) : (
+        <>
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-4xl mx-auto px-4 py-6">
+              {messages.map((message, index) => (
+                <ChatMessage
+                  key={index}
+                  role={message.role}
+                  content={message.content}
+                  timestamp={message.timestamp}
+                />
+              ))}
 
-          {/* Show quick actions only on first load */}
-          {messages.length === 1 && !isLoading && (
-            <div className="mt-6">
-              <p className="text-sm text-gray-600 mb-3 font-medium">Quick suggestions:</p>
-              <QuickActions onSelect={handleSendMessage} disabled={isLoading} />
-            </div>
-          )}
+              {/* Show quick actions only on first load */}
+              {messages.length === 1 && !isLoading && (
+                <div className="mt-6">
+                  <p className="text-sm text-zinc-400 mb-3 font-medium">Quick suggestions:</p>
+                  <QuickActions onSelect={handleSendMessage} disabled={isLoading} />
+                </div>
+              )}
 
-          {isLoading && (
-            <div className="flex justify-start mb-4">
-              <div className="bg-gray-100 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
-                    Z
-                  </div>
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+              {isLoading && (
+                <div className="flex justify-start mb-4">
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                        Z
+                      </div>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce"></span>
+                        <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
+                        <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+          </div>
 
-      {/* Input */}
-      <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+          {/* Input */}
+          <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+        </>
+      )}
     </div>
   );
 }
