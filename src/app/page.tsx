@@ -42,14 +42,21 @@ export default function Home() {
     setIsRegistered(true);
   };
 
-  const handleSendMessage = async (content: string) => {
-    // Add user message
+
+
+
+
+
+
+      /// Fistt Input is user message, then call API, then  assistant response or error message
+  const handleSendMessage = async (content: string) => { 
     const userMessage: Message = {
       role: 'user',
       content,
       timestamp: new Date()
     };
 
+   // Add it to screen immediately
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
@@ -58,13 +65,15 @@ export default function Home() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+
+              // Send full message history (user + assistant turns)
         body: JSON.stringify({
           messages: [...messages, userMessage].map(m => ({
             role: m.role,
             content: m.content
           })),
           userData, // Pass userData to store in Backend
-          model: 'gpt-3.5-turbo'
+          model: 'gpt-4o'
         })
       });
 

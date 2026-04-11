@@ -12,8 +12,8 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
 
   const handleSend = () => {
     if (input.trim() && !disabled) {
-      onSend(input.trim());
-      setInput('');
+      onSend(input.trim()); // calls handleSendMessage in page.tsx
+      setInput(''); // clears the input box
     }
   };
 

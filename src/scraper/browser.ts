@@ -84,7 +84,7 @@ export async function navigateToUrl(
   url: string,
   options: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'; retries?: number } = {}
 ): Promise<boolean> {
-  const { waitUntil = 'networkidle2', retries = 3 } = options;
+  const { waitUntil = 'domcontentloaded', retries = 3 } = options;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {

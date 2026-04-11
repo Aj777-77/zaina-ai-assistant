@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { scrapeZainBahrain, ZainBahrainScraper } from '@/scraper/zain-scraper';
 import { getDb } from '@/lib/firebase';
 
+// Allow up to 5 minutes for scraping (Vercel Pro/Enterprise or self-hosted)
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Quick scrape without saving to DB
-    console.log('🔍 Quick scrape request...');
+    console.log(' Quick scrape request...');
 
     const products = await scrapeZainBahrain();
 

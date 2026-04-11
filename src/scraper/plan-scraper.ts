@@ -71,12 +71,7 @@ export const PLAN_CATEGORIES: PlanCategory[] = [
     label: 'Fiber without Commitment',
     url: 'https://eshop.bh.zain.com/product/plans_broadband_fiber_no_commitment/plans?service_type=18&service_plan_type=19&contract_type=105',
   },
-  {
-    category: 'broadband',
-    subCategory: 'fiber_switch',
-    label: 'Switch Your Fiber to Zain',
-    url: 'https://eshop.bh.zain.com/product/plans_broadband_fiber_switch_your_fiber_zain/plans?service_type=18&service_plan_type=19&contract_type=171',
-  },
+ 
   {
     category: 'broadband',
     subCategory: 'fiber_gaming',
@@ -96,12 +91,7 @@ export const PLAN_CATEGORIES: PlanCategory[] = [
     label: '5G Home Broadband 12 Months',
     url: 'https://eshop.bh.zain.com/product/plans_broadband_5g_home_broadband_12_months/plans?service_type=18&service_plan_type=20&contract_type=10',
   },
-  {
-    category: 'broadband',
-    subCategory: '5g_switch',
-    label: '5G Switch Your Home Broadband to Zain',
-    url: 'https://eshop.bh.zain.com/product/plans_broadband_5g_home_broadband_switch_your_home_broadband_zain/plans?service_type=18&service_plan_type=20&contract_type=173',
-  },
+
   {
     category: 'broadband',
     subCategory: '5g_gaming',
@@ -127,11 +117,22 @@ export const PLAN_CATEGORIES: PlanCategory[] = [
     label: 'Prepaid Broadband',
     url: 'https://eshop.bh.zain.com/product/plans_broadband_prepaid_data_no_contract/plans?service_type=18&service_plan_type=101&contract_type=9',
   },
+  {
+    category: 'Family Plans',
+    subCategory: 'prepaid_broadband',
+    label: 'Family Plans',
+    url: 'https://eshop.bh.zain.com/product/plans_family_plans_family_share_24_months/plans?service_type=195&service_plan_type=196&contract_type=12',
+  },
+
 ];
 
 /**
  * Scrape all plan cards from a given plan page URL
  */
+const NAVIGATION_TIMEOUT = 90000;
+const ANGULAR_SETTLE_MS = 6000;
+const MAX_RETRIES = 3;
+
 export async function scrapePlansFromUrl(url: string, category: string, subCategory: string): Promise<ZainPlan[]> {
   const browser = await getBrowser({
     headless: true,
@@ -139,6 +140,17 @@ export async function scrapePlansFromUrl(url: string, category: string, subCateg
   });
 
   const page = await browser.newPage();
+
+  // Block unnecessary resources to reduce load time
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const type = req.resourceType();
+    if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
 
   await page.setExtraHTTPHeaders({
     'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
@@ -150,8 +162,28 @@ export async function scrapePlansFromUrl(url: string, category: string, subCateg
   });
 
   console.log(`  → Navigating to ${url}`);
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  let navigated = false;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT });
+      navigated = true;
+      break;
+    } catch (err) {
+      console.warn(`  ⚠️  Attempt ${attempt}/${MAX_RETRIES} failed: ${err}`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+  }
+
+  if (!navigated) {
+    await page.close();
+    throw new Error(`Navigation failed after ${MAX_RETRIES} attempts: ${url}`);
+  }
+
+  // Wait for Angular to finish rendering after DOM is ready
+  await new Promise(resolve => setTimeout(resolve, ANGULAR_SETTLE_MS));
 
   const plans = await page.evaluate((cat: string, subCat: string, pageUrl: string) => {
     const cards = Array.from(document.querySelectorAll('.card-container'));

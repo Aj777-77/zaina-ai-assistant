@@ -15,357 +15,306 @@ export interface ZainProduct {
 }
 
 export interface ProductCategory {
-  category: string;   // Firestore category value
-  label: string;      // Human-readable label
+  category: string;
+  label: string;
   url: string;
 }
 
 export const PRODUCT_CATEGORIES: ProductCategory[] = [
-  {
-    category: 'smartphones',
-    label: 'Smartphones',
-    url: 'https://eshop.bh.zain.com/product/smartphones',
-  },
-  {
-    category: 'ipad-tablets-laptops',
-    label: 'iPads, Tablets & Laptops',
-    url: 'https://eshop.bh.zain.com/product/ipad-tablets-laptops',
-  },
-  {
-    category: 'accessories',
-    label: 'Accessories',
-    url: 'https://eshop.bh.zain.com/product/accessories',
-  },
-  {
-    category: 'vouchers',
-    label: 'Vouchers',
-    url: 'https://eshop.bh.zain.com/product/vouchers',
-  },
-  {
-    category: 'home-solution-and-gaming',
-    label: 'Home Solution & Gaming',
-    url: 'https://eshop.bh.zain.com/product/home-solution-and-gaming',
-  },
-  {
-    category: 'gift-cards',
-    label: 'Gift Cards',
-    url: 'https://eshop.bh.zain.com/product/gift-cards',
-  },
-  {
-    category: 'smartwatches',
-    label: 'Smartwatches',
-    url: 'https://eshop.bh.zain.com/product/smartwatches',
-  },
-  {
-    category: 'tv',
-    label: 'TV',
-    url: 'https://eshop.bh.zain.com/product/tv',
-  },
+  { category: 'smartphones',            label: 'Smartphones',              url: 'https://eshop.bh.zain.com/product/smartphones' },
+  { category: 'ipad-tablets-laptops',   label: 'iPads, Tablets & Laptops', url: 'https://eshop.bh.zain.com/product/ipad-tablets-laptops' },
+  { category: 'accessories',            label: 'Accessories',              url: 'https://eshop.bh.zain.com/product/accessories' },
+  { category: 'vouchers',               label: 'Vouchers',                 url: 'https://eshop.bh.zain.com/product/vouchers' },
+  { category: 'home-solution-and-gaming', label: 'Home Solution & Gaming', url: 'https://eshop.bh.zain.com/product/home-solution-and-gaming' },
+  { category: 'gift-cards',             label: 'Gift Cards',               url: 'https://eshop.bh.zain.com/product/gift-cards' },
+  { category: 'smartwatches',           label: 'Smartwatches',             url: 'https://eshop.bh.zain.com/product/smartwatches' },
+  { category: 'tv',                     label: 'TV',                       url: 'https://eshop.bh.zain.com/product/tv' },
 ];
 
-/**
- * Specialized scraper for Zain Bahrain e-shop (eshop.bh.zain.com)
- */
+const CARD_SELECTORS = ['div.card-wrapper', 'div.product-card', 'div.product-item', 'li.product-item', 'article.product'];
+
 export class ZainBahrainScraper {
   private browser: Browser | null = null;
   private page: Page | null = null;
 
-  /**
-   * Initialize the scraper with anti-detection measures
-   */
   async initialize(headless: boolean = true): Promise<void> {
     this.browser = await getBrowser({
       headless,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
-
-    this.page = await this.browser.newPage();
-
-    // Set realistic headers
-    await this.page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-    });
-
-    // Hide automation indicators
-    await this.page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    });
-
+    this.page = await this.createFreshPage();
     console.log('✅ Zain Bahrain scraper initialized');
   }
 
-  /**
-   * Scrape all products from the main page, clicking "Load More" until all products are loaded
-   */
-  async scrapeMainPage(url: string = 'https://eshop.bh.zain.com/'): Promise<ZainProduct[]> {
-    if (!this.page) {
-      throw new Error('Scraper not initialized. Call initialize() first.');
-    }
+  /** Create a new configured page on the shared browser. */
+  private async createFreshPage(): Promise<Page> {
+    if (!this.browser) throw new Error('Browser not initialized.');
+    const page = await this.browser.newPage();
 
-    console.log(`🔍 Scraping ${url}...`);
-
-    await this.page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
     });
 
-    // Wait for product cards to appear in the DOM
-    try {
-      await this.page.waitForSelector('div.card-wrapper', { timeout: 10000 });
-    } catch {
-      // page may not have products — continue anyway
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    });
+
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
+
+    return page;
+  }
+
+  /**
+   * Return the current page, recreating it if the frame has become detached.
+   * This fixes the "Attempted to use detached Frame" errors that appear after
+   * a page goes through multiple navigations / Load More cycles.
+   */
+  private async getPage(): Promise<Page> {
+    if (this.page) {
+      try {
+        await this.page.evaluate(() => true); // smoke-test: throws if frame detached
+        return this.page;
+      } catch {
+        console.log('  ♻️  Page frame detached — creating fresh page');
+        try { await this.page.close(); } catch { /* already closed */ }
+        this.page = null;
+      }
     }
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    this.page = await this.createFreshPage();
+    return this.page;
+  }
 
-    // Keep clicking "Load More" until all products are visible (max 50 clicks)
+  /** Navigate with up to 3 retries. Recovers a detached page between attempts. */
+  private async navigate(url: string, timeout = 60000): Promise<Page> {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const page = await this.getPage();
+      try {
+        // Use domcontentloaded instead of networkidle2 to avoid WAF/SPA 60s timeouts
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+        // Wait a bit for angular components to load after DOM is ready
+        await new Promise(r => setTimeout(r, 6000));
+        return page;
+      } catch (err) {
+        console.warn(`  ⚠️  Navigation attempt ${attempt}/3 failed for ${url}: ${err}`);
+        if (attempt < 3) {
+          // Force page recreation on next attempt so we don't retry on a broken frame
+          try { await this.page?.close(); } catch { /* ignore */ }
+          this.page = null;
+          await new Promise(r => setTimeout(r, attempt * 3000));
+        }
+      }
+    }
+    throw new Error(`Navigation failed after 3 attempts: ${url}`);
+  }
+
+  /**
+   * Scroll the page (triggers lazy-loaded content) then wait for ANY card
+   * selector using waitForFunction — a single 20-second budget covers all
+   * selectors at once so Angular has enough time to finish rendering.
+   */
+  private async detectCardSelector(page: Page): Promise<string> {
+    // Scroll to bottom → back to top to trigger lazy-loading
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await new Promise(r => setTimeout(r, 1500));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await new Promise(r => setTimeout(r, 500));
+
+    try {
+      // Poll every 500 ms for up to 20 s — stops the moment any selector appears
+      const found = await page.waitForFunction(
+        (sels: string[]) => sels.find(s => document.querySelector(s) !== null) || '',
+        { timeout: 20000, polling: 500 },
+        CARD_SELECTORS,
+      );
+      const sel = await found.jsonValue() as string;
+      if (sel) {
+        console.log(`  ✔  Card selector matched: ${sel}`);
+        return sel;
+      }
+    } catch {
+      /* timeout — fall through to debug logging */
+    }
+
+    const pageClasses = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('[class]'));
+      const classes = new Set<string>();
+      els.forEach(el => el.classList.forEach(c => classes.add(c)));
+      return Array.from(classes).slice(0, 80).join(', ');
+    });
+    console.warn(`  ⚠️  No card selector matched. Classes on page: ${pageClasses}`);
+    return CARD_SELECTORS[0]; // fallback
+  }
+
+  /** Extract all products from the already-navigated page, clicking Load More until exhausted. */
+  private async extractProducts(page: Page, url: string): Promise<ZainProduct[]> {
+    const cardSel = await this.detectCardSelector(page);
+
     let loadMoreClicks = 0;
-    while (loadMoreClicks < 50) {
-      // Scroll to bottom so the button is in view
-      await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    while (loadMoreClicks < 30) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await new Promise(r => setTimeout(r, 800));
 
-      const urlBefore = this.page.url();
+      const urlBefore = page.url();
 
-      // Only click <button> elements (never <a> tags which navigate away)
-      const clicked = await this.page.evaluate(() => {
-        const countBefore = document.querySelectorAll('div.card-wrapper').length;
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const btn = buttons.find(el => {
+      const countBefore = await page.evaluate((sel: string) => {
+        const count = document.querySelectorAll(sel).length;
+        const btn = Array.from(document.querySelectorAll('button')).find(el => {
           const text = el.textContent?.trim().toLowerCase() || '';
-          return (
-            text === 'load more' ||
-            text === 'show more' ||
-            text === 'view more' ||
-            text === 'more products' ||
-            text.includes('load more') ||
-            text.includes('show more') ||
-            text.includes('view more')
-          );
+          return text.includes('load more') || text.includes('show more') || text.includes('view more') || text === 'more products';
         });
-        if (btn && !btn.disabled) {
+        if (btn && !(btn as HTMLButtonElement).disabled) {
           btn.click();
-          return countBefore;
+          return count;
         }
         return -1;
-      });
+      }, cardSel);
 
-      if (clicked === -1) break; // no button found
+      if (countBefore === -1) break;
 
-      // Wait for content to load
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(r => setTimeout(r, 1500));
 
-      // If clicking navigated away from this page, go back and stop
-      const urlAfter = this.page.url();
-      if (urlAfter !== urlBefore) {
-        console.log(`  ↩️  "View More" navigated away — going back to ${urlBefore}`);
-        await this.page.goto(urlBefore, { waitUntil: 'networkidle2', timeout: 30000 });
-        // Wait for product cards to actually appear in the DOM
-        try {
-          await this.page.waitForSelector('div.card-wrapper', { timeout: 10000 });
-        } catch {
-          // no cards appeared — that's fine, we'll extract whatever is there
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (page.url() !== urlBefore) {
+        console.log(`  ↩️  Load More navigated away — returning to ${urlBefore}`);
+        await page.goto(urlBefore, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 6000));
+        try { await page.waitForSelector(cardSel, { timeout: 10000 }); } catch { /* ok */ }
         break;
       }
 
-      // Verify new products actually loaded — if count didn't grow, stop
-      const newCount = await this.page.evaluate(() => document.querySelectorAll('div.card-wrapper').length);
-      if (newCount <= clicked) break;
+      const newCount = await page.evaluate((sel: string) => document.querySelectorAll(sel).length, cardSel);
+      if (newCount <= countBefore) break;
 
       loadMoreClicks++;
-      console.log(`  🔁 Load more clicked (${loadMoreClicks}x) — now ${newCount} products`);
+      console.log(`  🔁 Load more (${loadMoreClicks}x) — ${newCount} products`);
     }
 
     if (loadMoreClicks > 0) {
-      console.log(`  ✅ Loaded all pages after ${loadMoreClicks} "Load More" clicks`);
+      console.log(`  ✅ All pages loaded after ${loadMoreClicks} "Load More" clicks`);
     }
 
-    const products = await this.page.evaluate(() => {
-      const productCards = Array.from(document.querySelectorAll('div.card-wrapper'));
-
-      return productCards.map(card => {
-        // Get brand
-        const brandEl = card.querySelector('.card-body .paragraph-p-3');
-        const brand = brandEl?.textContent?.trim() || 'Unknown';
-
-        // Get product name
-        const nameEl = card.querySelector('.card-body .weight-700');
-        const name = nameEl?.textContent?.trim() || 'Unknown Product';
-
-        // Get image
-        const imgEl = card.querySelector('img.item-image');
-        const imageUrl = imgEl?.getAttribute('src') || '';
-
-        // Get product URL
-        const linkEl = card.querySelector('a.text-hover-card, a[href*="/product/"]');
-        const productUrl = linkEl?.getAttribute('href') || '';
-
-        // Get savings/offer
-        const savingsEl = card.querySelector('.card-header span');
-        const savings = savingsEl?.textContent?.trim() || '';
-
-        // Get pricing
-        const footerEl = card.querySelector('.card-footer');
-        const footerText = footerEl?.textContent || '';
-
-        // Extract monthly price
+    const products = await page.evaluate((sel: string) => {
+      return Array.from(document.querySelectorAll(sel)).map(card => {
+        const brand    = card.querySelector('.card-body .paragraph-p-3')?.textContent?.trim() || 'Unknown';
+        const name     = card.querySelector('.card-body .weight-700')?.textContent?.trim() || 'Unknown Product';
+        const imageUrl = card.querySelector('img.item-image, img[src]')?.getAttribute('src') || '';
+        const productUrl = card.querySelector('a.text-hover-card, a[href*="/product/"]')?.getAttribute('href') || '';
+        const savings  = card.querySelector('.card-header span')?.textContent?.trim() || '';
+        const footerText = card.querySelector('.card-footer')?.textContent || '';
         const monthlyMatch = footerText.match(/BD\s*([\d.]+)\s*\/mo/);
         const monthlyPrice = monthlyMatch ? `BD ${monthlyMatch[1]} /mo` : '';
-
-        // Extract cash price
         const cashMatch = footerText.match(/Cash Price[\s\S]*?BD\s*([\d.]+)/);
         const cashPrice = cashMatch ? `BD ${cashMatch[1]}` : '';
-
-        // Use whichever price is available
         const price = cashPrice || monthlyPrice || 'N/A';
-
         return {
-          name,
-          brand,
-          price,
-          cashPrice,
-          monthlyPrice,
-          savings,
+          name, brand, price, cashPrice, monthlyPrice, savings,
           imageUrl: imageUrl.startsWith('http') ? imageUrl : `https://eshop.bh.zain.com${imageUrl}`,
           productUrl: productUrl.startsWith('http') ? productUrl : `https://eshop.bh.zain.com${productUrl}`,
-          scrapedAt: new Date()
+          scrapedAt: new Date(),
         };
       });
-    });
+    }, cardSel);
 
-    console.log(`✅ Scraped ${products.length} products from ${url}`);
+    if (products.length === 0) {
+      console.warn(`  ⚠️  0 products extracted from ${url} (selector: ${cardSel})`);
+    } else {
+      console.log(`  ✅ Scraped ${products.length} products from ${url}`);
+    }
 
     return products;
   }
 
+  /** Navigate to URL and scrape all products (with Load More pagination). */
+  async scrapeMainPage(url: string = 'https://eshop.bh.zain.com/'): Promise<ZainProduct[]> {
+    console.log(`🔍 Scraping ${url}...`);
+    const page = await this.navigate(url);
+    return this.extractProducts(page, url);
+  }
+
   /**
-   * Scrape products by category — handles subcategory pages automatically
+   * Scrape a category URL. If the page shows brand/subcategory tiles instead of
+   * product cards, discovers linked pages and scrapes each one.
    */
-  async scrapeByCategory(categoryUrl: string): Promise<ZainProduct[]> {
-    if (!this.page) throw new Error('Scraper not initialized. Call initialize() first.');
+  async scrapeByCategory(categoryUrl: string, categoryTag?: string): Promise<ZainProduct[]> {
+    console.log(`🔍 Scraping ${categoryUrl}...`);
+    const page = await this.navigate(categoryUrl);
 
-    // First attempt: scrape the category page directly
-    const products = await this.scrapeMainPage(categoryUrl);
+    // 1st attempt — try to extract products directly from this page
+    let products = await this.extractProducts(page, categoryUrl);
+    if (products.length > 0) {
+      return categoryTag ? products.map(p => ({ ...p, category: categoryTag })) : products;
+    }
 
-    if (products.length > 0) return products;
+    // 2nd attempt — look for subcategory / brand links on the current page
+    console.log(`  ℹ️  No products directly on ${categoryUrl} — scanning for subcategory links...`);
 
-    // If 0 products found, the page may show subcategory tiles — discover and scrape each
-    console.log(`  ℹ️  No products on ${categoryUrl}, checking for subcategories...`);
+    const baseSeg = new URL(categoryUrl).pathname.split('/').filter(Boolean).pop() || '';
 
-    const subcategoryUrls = await this.page.evaluate((baseUrl: string) => {
-      const links = Array.from(document.querySelectorAll('a[href]')) as HTMLAnchorElement[];
+    let subcategoryUrls: string[] = await page.evaluate((baseUrl: string, seg: string) => {
       const base = new URL(baseUrl);
-
-      return links
+      return Array.from(document.querySelectorAll('a[href]') as NodeListOf<HTMLAnchorElement>)
         .map(a => a.href)
         .filter(href => {
           try {
             const u = new URL(href);
-            // Must be same origin, under /product/, deeper than the current path, and not the same page
-            return (
-              u.origin === base.origin &&
-              u.pathname.startsWith(base.pathname + '/') &&
-              u.pathname !== base.pathname
-            );
-          } catch {
+            if (u.origin !== base.origin) return false;
+            if (u.pathname === base.pathname) return false;
+            if (u.pathname.startsWith('/product/plans')) return false;
+            if (u.pathname.startsWith(base.pathname + '/')) return true;
+            if (u.pathname.startsWith('/product/') && u.pathname.includes(seg)) return true;
             return false;
-          }
+          } catch { return false; }
         })
-        .filter((href, i, arr) => arr.indexOf(href) === i); // deduplicate
-    }, categoryUrl);
+        .filter((h, i, arr) => arr.indexOf(h) === i);
+    }, categoryUrl, baseSeg);
+
+    // 3rd attempt — broaden to any /product/ link visible on the page
+    if (subcategoryUrls.length === 0) {
+      console.log(`  ℹ️  No subcategory links found — trying all /product/ links on page...`);
+      subcategoryUrls = await page.evaluate((baseUrl: string) => {
+        const base = new URL(baseUrl);
+        return Array.from(document.querySelectorAll('a[href]') as NodeListOf<HTMLAnchorElement>)
+          .map(a => a.href)
+          .filter(href => {
+            try {
+              const u = new URL(href);
+              return (
+                u.origin === base.origin &&
+                u.pathname.startsWith('/product/') &&
+                u.pathname !== base.pathname &&
+                !u.pathname.startsWith('/product/plans')
+              );
+            } catch { return false; }
+          })
+          .filter((h, i, arr) => arr.indexOf(h) === i)
+          .slice(0, 15);
+      }, categoryUrl);
+    }
 
     if (subcategoryUrls.length === 0) {
-      console.log(`  ⚠️  No subcategories found for ${categoryUrl}`);
+      console.warn(`  ⚠️  No subcategories or product links found for ${categoryUrl}`);
       return [];
     }
 
-    console.log(`  📂 Found ${subcategoryUrls.length} subcategories, scraping each...`);
-
+    console.log(`  📂 Found ${subcategoryUrls.length} subcategory pages — scraping each...`);
     const allProducts: ZainProduct[] = [];
 
     for (const subUrl of subcategoryUrls) {
-      console.log(`    ↳ Scraping subcategory: ${subUrl}`);
+      console.log(`    ↳ ${subUrl}`);
       const subProducts = await this.scrapeMainPage(subUrl);
       allProducts.push(...subProducts);
     }
 
-    return allProducts;
+    return categoryTag ? allProducts.map(p => ({ ...p, category: categoryTag })) : allProducts;
   }
 
-  /**
-   * Search for specific products
-   */
-  async searchProducts(query: string): Promise<ZainProduct[]> {
-    if (!this.page) {
-      throw new Error('Scraper not initialized. Call initialize() first.');
-    }
-
-    console.log(`🔎 Searching for: "${query}"`);
-
-    await this.page.goto('https://eshop.bh.zain.com/', {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    });
-
-    try {
-      // Look for search input
-      const searchSelector = 'input[type="search"], input[placeholder*="Search"], input[placeholder*="search"]';
-      await this.page.waitForSelector(searchSelector, { timeout: 5000 });
-
-      await this.page.type(searchSelector, query);
-      await this.page.keyboard.press('Enter');
-
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      return await this.scrapeMainPage();
-    } catch (error) {
-      console.warn('Search functionality not available, returning main page results');
-      return await this.scrapeMainPage();
-    }
-  }
-
-  /**
-   * Get product categories available
-   */
-  async getCategories(): Promise<Array<{ name: string; url: string }>> {
-    if (!this.page) {
-      throw new Error('Scraper not initialized. Call initialize() first.');
-    }
-
-    await this.page.goto('https://eshop.bh.zain.com/', {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    });
-
-    const categories = await this.page.evaluate(() => {
-      const categoryLinks = Array.from(document.querySelectorAll('a[href]'));
-
-      return categoryLinks
-        .map(a => ({
-          name: a.textContent?.trim() || '',
-          url: a.getAttribute('href') || ''
-        }))
-        .filter(cat =>
-          cat.name &&
-          cat.url &&
-          (cat.url.includes('/category/') ||
-           cat.url.includes('/devices') ||
-           cat.url.includes('/products') ||
-           cat.name.toLowerCase().includes('apple') ||
-           cat.name.toLowerCase().includes('samsung') ||
-           cat.name.toLowerCase().includes('phone'))
-        )
-        .slice(0, 20);
-    });
-
-    return categories;
-  }
-
-  /**
-   * Close the scraper
-   */
   async close(): Promise<void> {
     await closeBrowser();
     this.browser = null;
@@ -373,12 +322,8 @@ export class ZainBahrainScraper {
   }
 }
 
-/**
- * Quick scrape function for Zain Bahrain main page
- */
 export async function scrapeZainBahrain(): Promise<ZainProduct[]> {
   const scraper = new ZainBahrainScraper();
-
   try {
     await scraper.initialize();
     return await scraper.scrapeMainPage();

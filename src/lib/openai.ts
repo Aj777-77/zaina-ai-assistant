@@ -28,7 +28,7 @@ export function initializeOpenAI(): OpenAI {
     apiKey: apiKey,
   });
 
-  console.log('✅ OpenAI client initialized successfully');
+  console.log(' OpenAI client initialized successfully');
 
   return openaiClient;
 }

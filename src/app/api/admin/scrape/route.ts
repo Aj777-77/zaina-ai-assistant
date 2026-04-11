@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
       for (const cat of PRODUCT_CATEGORIES) {
         try {
-          const products = await scraper.scrapeByCategory(cat.url);
+          const products = await scraper.scrapeByCategory(cat.url, cat.category);
           let catSaved = 0;
 
           for (const product of products) {
