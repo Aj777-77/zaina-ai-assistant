@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createChatCompletion, createStreamingChatCompletion } from '@/lib/openai';
+import { createChatCompletion, createStreamingChatCompletion, getOpenAI } from '@/lib/openai';
 import { getDb } from '@/lib/firebase';
 import { criticalRules } from '@/lib/criticalRules';
 
@@ -38,84 +38,59 @@ function getMonthlyPrice(product: any): number | null {
 }
 
 
-// Helper 3 Set Budget 
-function detectBudget(userMessages: string[]): {
-  min: number | null;
-  max: number | null;
-  isMonthly: boolean;
-} {
-  for (const msg of userMessages) {
-
-    // Skip questions about price — user is ASKING, not STATING a budget
-    const isQuestion = /\b(how much|does it cost|what.?s the price|will i pay|tell me more)\b/i.test(msg);
-    if (isQuestion) continue;
-
-    const isMonthly = /installm|\/mo|per month|monthly/i.test(msg);
-
-    // Pattern 1 — RANGE: "BD 10 to BD 20", "10 - 20 BD", "between BD 10 and BD 20"
-    const rangeMatch = msg.match(
-      /(?:bd\s*)?([\d,.]+)\s*(?:bd)?\s*(?:to|and|-)\s*(?:bd\s*)?([\d,.]+)/i
-    );
-    if (rangeMatch) {
-      return {
-        min: parseFloat(rangeMatch[1].replace(/,/g, '')),
-        max: parseFloat(rangeMatch[2].replace(/,/g, '')),
-        isMonthly,
-      };
-    }
-
-    // Pattern 2 — MAX only: "under BD 300", "less than 200", "up to 400"
-    const maxMatch =
-      msg.match(/(?:under|below|less than|budget|max|up to)\s*(?:bd\s*)?([\d,.]+)/i);
-
-    if (maxMatch) {
-      return {
-        min: null,
-        max: parseFloat(maxMatch[1].replace(/,/g, '')),
-        isMonthly,
-      };
-    }
-
-    // Pattern 3 — AROUND / EXACT: "around BD 300", "bd 300", "300 bd"
-    const aroundMatch =
-      msg.match(/(?:around|about|approx|approximately|for)\s*(?:bd\s*)?([\d,.]+)/i) ||
-      msg.match(/(?:bd\s*)([\d,.]+)/i) ||
-      msg.match(/([\d,.]+)\s*bd/i);
-
-    if (aroundMatch) {
-      const val = parseFloat(aroundMatch[1].replace(/,/g, ''));
-      return {
-        min: val * 0.85, // 15% below
-        max: val * 1.15, // 15% above
-        isMonthly,
-      };
-    }
-  }
-
-  // No budget found in any message
-  return { min: null, max: null, isMonthly: false };
+// Helper 4: AI INTENT PARSER
+async function analyzeUserIntent(messages: string[]): Promise<{
+  category: string | null;
+  budget: { min: number | null; max: number | null; isMonthly: boolean } | null;
+}> {
+  try {
+    const openai = getOpenAI();
+    
+    // We send an array of chronological messages so the AI can understand context, like "more cheaper".
+    const conversation = [...messages].reverse().map((m, i) => `[Msg ${i + 1}]: ${m}`).join('\n');
+    
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are an expert commerce search assistant. Extract the requested product category and budget constraints from the user's sequential messages. 
+Return strictly a valid JSON object matching this exact shape:
+{
+  "category": "smartphones" | "tablets" | "laptops" | "smartwatches" | "accessories" | "tvs" | "gaming" | null,
+  "budget": {
+    "min": number | null,
+    "max": number | null,
+    "isMonthly": boolean
+  } | null
 }
 
+RULES:
+1. "category" MUST be one of those exact strings, or null. PS5 = "gaming".
+2. If the user states a specific new flagship/expensive product name in their final message (like "iPhone 17") without re-stating a budget, set the "budget" to null so it doesn't get hidden. 
+3. If they say "cheaper", figure out the previously understood max budget, and return a significantly lower max. 
+4. Handle conversational misunderstandings correctly. If they say "how much in case", that means "how much in cash" (prices). DO NOT trigger the "accessories" category just because of the word "case".
+5. If the user asks for screens, monitors, or displays (even for gaming), map the category to "tvs".
+OUTPUT STRICT JSON ONLY.`
+        },
+        {
+          role: 'user',
+          content: conversation
+        }
+      ]
+    });
 
-// Helper 4 Detect category from user messages
-function detectCategory(userMessages: string[]): string | null {
-  const categoryKeywords: Record<string, string[]> = {
-    smartphones:  ['phone', 'mobile', 'iphone', 'samsung', 'galaxy', 'android', 'smartphone'],
-    tablets:      ['tablet', 'ipad', 'tab'],
-    laptops:      ['laptop', 'notebook', 'macbook', 'computer'],
-    smartwatches: ['watch', 'smartwatch'],
-    accessories:  ['case', 'charger', 'cable', 'earphone', 'airpod', 'headphone', 'accessory'],
-  };
-
-  for (const msg of userMessages) {
-    const lower = msg.toLowerCase();
-    for (const [category, keywords] of Object.entries(categoryKeywords)) {
-      if (keywords.some(k => lower.includes(k))) {
-        return category;
-      }
-    }
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
+    return {
+      category: parsed.category || null,
+      budget: parsed.budget || null
+    };
+  } catch (err) {
+    console.error('Failed to parse intent AI:', err);
+    return { category: null, budget: null };
   }
-  return null;
 }
 
 
@@ -170,13 +145,13 @@ export async function POST(request: NextRequest) {
     const lastUserMessage = userMessages[0] || '';
 
 
-    //  STEP 2: DETECT BUDGET ─────────────────────────────────────────────────
-    const { min: budgetMin, max: budgetMax, isMonthly: isMonthlyQuery } = detectBudget(userMessages);
+    //  STEP 2/3: DETECT INTENT (AI-BASED) ───────────────────────────────────
+    const { category: requestedCategory, budget } = await analyzeUserIntent(userMessages);
+    
+    const budgetMin = budget?.min ?? null;
+    const budgetMax = budget?.max ?? null;
+    const isMonthlyQuery = budget?.isMonthly ?? false;
     const budgetWasSet = budgetMin !== null || budgetMax !== null;
-
-
-    //  STEP 3: DETECT CATEGORY ───────────────────────────────────────────────
-    const requestedCategory = detectCategory(userMessages);
 
 
     //  STEP 4: FETCH + FILTER PRODUCTS ──────────────────────────────────────
@@ -197,10 +172,12 @@ export async function POST(request: NextRequest) {
           const isNotPhone = /tv\b|laptop|tablet|ipad|watch|earphone|charger|case|router|accessory/i.test(name);
           return isPhone && !isNotPhone;
         }
-        if (requestedCategory === 'tablets')      return /tablet|ipad/i.test(cat);
-        if (requestedCategory === 'laptops')      return /laptop|notebook/i.test(cat);
+        if (requestedCategory === 'tablets')      return /tablet|ipad/i.test(cat) || /tablet|ipad/i.test(name);
+        if (requestedCategory === 'laptops')      return /laptop|notebook|macbook/i.test(name) || (/laptop/i.test(cat) && !/ipad|tablet|mac mini|imac/i.test(name));
         if (requestedCategory === 'smartwatches') return /watch/i.test(cat);
         if (requestedCategory === 'accessories')  return /access/i.test(cat);
+        if (requestedCategory === 'tvs')          return /tv|television|screen|display|monitor|gaming|console/i.test(cat) || /tv|ps5|playstation|xbox|monitor/i.test(name);
+        if (requestedCategory === 'gaming')       return /gaming|console|ps5|playstation|xbox|nintendo|tv|television|screen|monitor/i.test(cat) || /ps5|playstation|xbox|nintendo|tv|monitor/i.test(name);
         return true;
       });
     }
@@ -248,16 +225,28 @@ Your role:
     const knowledgeSnapshot = await db.collection('knowledge').limit(100).get();
     let knowledgeContext = '';
     if (!knowledgeSnapshot.empty) {
-      const queryWords = lastUserMessage.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      // Combine last user message with previous assistant message to catch context like "it" or "that plan"
+      const prevAssistantMsg = messages.length > 1 && messages[messages.length - 2].role === 'assistant' 
+        ? messages[messages.length - 2].content 
+        : '';
+      const combinedContext = `${lastUserMessage} ${prevAssistantMsg}`;
+      const stopWords = new Set(['this', 'that', 'with', 'your', 'have', 'from', 'what', 'about', 'like', 'there', 'some', 'when', 'then', 'would', 'could', 'should', 'plan', 'price', 'month', 'data', 'available', 'currently', 'within', 'budget', 'anything', 'else', 'assist', 'proceed', 'upgrade', 'higher', 'offers', 'fits', 'sure', 'here', 'these', 'those']);
+      const queryWords = combinedContext.toLowerCase().split(/[^a-z0-9]/).filter(w => w.length > 3 && !stopWords.has(w));
+
       const relevantDocs = knowledgeSnapshot.docs
         .map(doc => doc.data())
-        .filter(data => {
+        .map(data => {
           const docText = `${data.title || ''} ${data.content || ''}`.toLowerCase();
-          return queryWords.some(w => docText.includes(w));
-        });
+          const matchCount = queryWords.reduce((count, w) => docText.includes(w) ? count + 1 : count, 0);
+          return { data, matchCount };
+        })
+        .filter(doc => doc.matchCount > 0)
+        .sort((a, b) => b.matchCount - a.matchCount)
+        .slice(0, 4) // Take top 4 most relevant docs
+        .map(doc => doc.data);
 
       if (relevantDocs.length > 0) {
-        const MAX_CHARS = 1500;
+        const MAX_CHARS = 1000;
         knowledgeContext = '\n\n=== REFERENCE KNOWLEDGE BASE ===\n' +
           relevantDocs.map(data => {
             const body = (data.content || '').slice(0, MAX_CHARS);
@@ -295,7 +284,7 @@ Your role:
                 (p.savings ? ` | Offer: ${p.savings}` : '') + tag
               ).join('\n')
             ).join('\n\n') +
-            '\n=== END OF INVENTORY ===';
+            '\n=== END OF INVENTORY ===\n\nCRITICAL ANTI-HALLUCINATION RULE: You must ONLY recommend products, prices, and plans that are explicitly listed above in the INVENTORY. NEVER invent, guess, or pull products from your general pre-trained knowledge. If a user asks for a device not in the list, explicitly tell them it is not currently in stock.';
         })()
       : '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n[NO PRODUCTS MATCH — DO NOT INVENT ANY.]\n=== END OF INVENTORY ===';
 
@@ -327,7 +316,7 @@ Your role:
     // Budget note — tells GPT how the products were already filtered
     const budgetNote = budgetWasSet
       ? isMonthlyQuery
-        ? `\n\nNOTE: Customer's monthly budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}/month. Products are pre-filtered by monthly price. Compare ONLY monthly price — never the full price.`
+        ? `\n\nNOTE: Customer's monthly budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}/month. Products are pre-filtered by monthly price. Plans are NOT pre-filtered. If the customer wants a phone AND a plan, you must do the math to ensure (Phone Monthly + Plan Monthly) does not exceed their total budget. Scan the ENTIRE plans list for cheaper options.`
         : `\n\nNOTE: Customer's cash budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}. Products are pre-filtered. Do NOT suggest anything outside this list.`
       : '';
 
