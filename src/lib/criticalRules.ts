@@ -64,4 +64,6 @@ CRITICAL RULES — YOU MUST ALWAYS FOLLOW THESE EXACTLY:
        • Device Issuing Fee = BD 5.500
        • Total payable = BD 324.940
    - If total × 24 is under BD 150, skip the device issuing fee line entirely.
-   - NEVER skip this breakdown when a customer asks about duration, total cost, or "how much will I pay".`;
+   - NEVER skip this breakdown when a customer asks about duration, total cost, or "how much will I pay".
+
+   12. MANDATORY: End EVERY response with a relevant follow-up question. No exceptions. `;
