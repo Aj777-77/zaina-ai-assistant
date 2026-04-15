@@ -6,7 +6,7 @@ interface QuickActionsProps {
 export default function QuickActions({ onSelect, disabled = false }: QuickActionsProps) {
   const suggestions = [
     { icon: '📱', text: 'Show me latest phones', query: 'Show me the latest phones available' },
-    { icon: '💰', text: 'Budget phones under BD 300', query: 'I need a phone under BD 300' },
+    { icon: '💰', text: 'Budget phones under BD 400', query: 'I need a phone under BD 400' },
     { icon: '🍎', text: 'Apple devices', query: 'Show me Apple devices' },
     { icon: '📞', text: 'Best plans', query: 'What are the best mobile plans?' },
     { icon: '⌚', text: 'Smart watches', query: 'Show me smart watches' },

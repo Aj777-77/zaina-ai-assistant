@@ -22,7 +22,7 @@ function parseBD(text: string): { amount: number; isMonthly: boolean } | null {
 function getFullPrice(product: any): number | null {
   const parsed = parseBD(product.price);
   if (!parsed) return null;
-  return parsed.isMonthly ? parsed.amount * 24 : parsed.amount;
+  return parsed.isMonthly ? (parsed.amount * 24) * 1.1  : parsed.amount;
 }
 
 // HELPER 3 — GET MONTHLY PRICE
@@ -67,11 +67,13 @@ Return strictly a valid JSON object matching this exact shape:
 
 RULES:
 1. "category" MUST be one of those exact strings, or null. PS5 = "gaming".
-2. If the user states a specific new flagship/expensive product name in their final message (like "iPhone 17") without re-stating a budget, set "budget" to null so it doesn't get hidden. 
-3. If they say "cheaper", figure out the previously understood max budget, and return a significantly lower max. 
+2. If the user states a specific new flagship/expensive product name in their final message (like "iPhone 17") without re-stating a budget, set "budget" to null so it doesn't get hidden.
+3. If they say "cheaper", figure out the previously understood max budget, and return a significantly lower max.
 4. Handle conversational misunderstandings correctly. If they say "how much in case", that means "how much in cash" (prices). DO NOT trigger the "accessories" category just because of the word "case".
 5. If the user asks for screens, monitors, or displays (even for gaming), map the category to "tvs".
-OUTPUT STRICT JSON ONLY.`
+6. A budget stated as a single number (e.g. "my budget is BD 30") always means MAX only — set min to null, max to that number. NEVER set min equal to max.
+7. If the user's LAST message does NOT mention a price, budget, or cost (e.g. they're just asking "what cases do you have?" or "show me tablets"), set "budget" to null. Do NOT carry forward a budget from earlier in the conversation when the user is simply browsing without re-stating a budget.
+8. OUTPUT STRICT JSON ONLY.`
         },
         {
           role: 'user',
@@ -115,7 +117,7 @@ function isProductInBudget(
 // ================================================================================
 
 
-    // ── STEP 1: RECEIVE REQUEST FROM FRONTEND ────────────────────────────────
+    //STEP 1: RECEIVE REQUEST FROM FRONTEND 
 export async function POST(request: NextRequest) {
   try {
 
@@ -133,7 +135,7 @@ export async function POST(request: NextRequest) {
     const lastUserMessage = userMessages[0] || ''; 
 
 
-    // ── STEP 2: DETECT WHAT THE USER WANTS (AI-BASED INTENT PARSING) ─────────
+    //STEP 2: DETECT WHAT THE USER WANTS (AI-BASED INTENT PARSING)
     
     const { category: requestedCategory, budget } = await analyzeUserIntent(userMessages);
 
@@ -144,7 +146,7 @@ export async function POST(request: NextRequest) {
     const budgetWasSet    = budgetMin !== null || budgetMax !== null;
 
 
-    // ── STEP 3: FETCH + FILTER PRODUCTS FROM FIREBASE ────────────────────────
+    //STEP 3: FETCH + FILTER PRODUCTS FROM FIREBASE
     const productsSnapshot = await db.collection('products').limit(500).get();
     let products = productsSnapshot.docs
       .map(doc => doc.data())
@@ -172,14 +174,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ── Filter 2: Budget ──────────────────────────────────────────────────────
+    //Filter 2: Budget 
     if (budgetWasSet) {
       products = products.filter(p =>
         isProductInBudget(p, budgetMin, budgetMax, isMonthlyQuery)
       );
     }
 
-    // ── Filter 3: Remove already-shown products ───────────────────────────────
+    //Filter 3: Remove already-shown products 
     const isMoreRequest = /\b(more|next|another|show more|what else|any other)\b/i.test(lastUserMessage);
     if (isMoreRequest) {
       const shownText = messages
@@ -194,7 +196,7 @@ export async function POST(request: NextRequest) {
     }
 
 
-    // ── STEP 4: FETCH PLANS, PERSONA, AND KNOWLEDGE DOCS FROM FIREBASE ────────
+    // ── STEP 4: FETCH PLANS, PERSONA, AND KNOWLEDGE DOCS FROM FIREBASE 
 
     const plansSnapshot = await db.collection('plans').limit(200).get();
     const plans = plansSnapshot.docs.map(doc => doc.data());
@@ -253,39 +255,9 @@ Your role:
     }
 
 
-// STEP 5 — BUILD THE SYSTEM MESSAGE
+//STEP 5 — BUILD THE SYSTEM MESSAGE
 
-
-//
-//   5.2  Build plansContext
-//        → Group plans by category / subCategory
-//        → Check if any plan has "Unlimited" data
-//        → Convert to a readable text string
-//        → If no plans → empty string (nothing added)
-//
-//   5.3  Build budgetNote
-//        → If a budget was detected → tell GPT the budget and that
-//          products are already pre-filtered (so GPT knows why list is short)
-//        → If monthly budget → also warn GPT plans are NOT filtered
-//          (so GPT must do the math: phone monthly + plan monthly ≤ budget)
-//        → If no budget → empty string (nothing added)
-//
-//   5.4  Build moreNote
-//        → If user asked for "more" → tell GPT inventory shows only new products
-//        → Otherwise → tell GPT how many products are in the list
-//          and to show max 3 at a time
-//
-//   5.5  Build followUpReminder
-//        → A mandatory instruction: always end every reply with a question
-//
-//   5.6  Assemble everything into ONE systemMessage object
-//        → role: 'system' (OpenAI reads this before user messages)
-//        → content: all 7 pieces joined together as one long string
-//
-// ================================================================================
-
-
-// ── 5.1  PRODUCT CONTEXT 
+//5.1  PRODUCT CONTEXT 
 
 const productContext = products.length > 0
   ? (() => {
@@ -294,8 +266,7 @@ const productContext = products.length > 0
         new Map(products.map(p => [`${p.category}-${p.brand}-${p.name}`, p])).values()
       );
 
-      // ── Group by category 
-      // grouped = { "Smartphones": [p1, p2], "Tablets": [p3], ... }
+      // Group by category 
       const grouped: Record<string, typeof unique> = {};
       unique.forEach(p => {
         const key = p.categoryLabel || p.category || 'Other';
@@ -303,7 +274,7 @@ const productContext = products.length > 0
         grouped[key].push(p);
       });
 
-// ── 5.2 Budget tag 
+// 5.2 Budget tag 
       const tag = budgetWasSet ? ' [CONFIRMED WITHIN CUSTOMER BUDGET]' : '';
 
       // ── Build the text string 
@@ -323,11 +294,11 @@ const productContext = products.length > 0
   : '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n[NO PRODUCTS MATCH — DO NOT INVENT ANY.]\n=== END OF INVENTORY ===';
 
 
-// ── 5.3  PLANS CONTEXT 
+//5.3  PLANS CONTEXT 
 const plansContext = plans.length > 0
   ? (() => {
 
-      // ── Group plans by category 
+      //Group plans by category 
       const grouped: Record<string, typeof plans> = {};
       plans.forEach(p => {
         const key = `${p.category} / ${p.subCategory}`;
@@ -335,7 +306,7 @@ const plansContext = plans.length > 0
         grouped[key].push(p);
       });
 
-      // ── Detect unlimited plans 
+      //Detect unlimited plans 
       const unlimitedPlans = plans.filter(p => /unlimited/i.test(p.data || ''));
       const unlimitedNote = unlimitedPlans.length > 0
         ? `\n⚠️ UNLIMITED PLANS: ${unlimitedPlans.map(p => p.name).join(', ')} — recommend first for unlimited requests.`
@@ -357,7 +328,7 @@ const plansContext = plans.length > 0
   : '';
 
 
-// ── 5.4  BUDGET NOTE 
+//5.4  BUDGET NOTE 
 
 const budgetNote = budgetWasSet
   ? isMonthlyQuery
@@ -369,37 +340,16 @@ const budgetNote = budgetWasSet
   : '';
 
 
-// ── 5.4  MORE NOTE ───────────────────────────────────────────────────────────
+//5.4  MORE NOTE 
 
 const moreNote = isMoreRequest
   ? `\n\nNOTE: Customer wants MORE options. Inventory is updated to show only products not yet shown. Present up to 3. If more remain, say so.`
   : `\n\nNOTE: There are ${products.length} product(s) in the inventory below. Show up to 3. If more remain, let the customer know.`;
 
 
-// ── 5.5  FOLLOW-UP REMINDER ──────────────────────────────────────────────────
-const followUpReminder = `\n\n⚠️ MANDATORY: End EVERY response with a relevant follow-up question. No exceptions.`;
 
 
-// ── 5.6  ASSEMBLE THE FINAL SYSTEM MESSAGE ───────────────────────────────────
-//
-// FLOW:
-//   All 7 pieces are joined together using + (string concatenation)
-//   The result is stored as role: 'system'
-//   This is what OpenAI receives FIRST before the user's messages
-//
-// ORDER MATTERS:
-//   1. baseSystemPrompt  → who Zaina is (must come first, sets the identity)
-//   2. budgetNote        → budget context (before products so GPT understands the list)
-//   3. moreNote          → product count rule (before products so GPT knows how many)
-//   4. knowledgeContext  → relevant Q&As (before products so GPT has extra context)
-//   5. productContext    → the actual product list (the main catalog)
-//   6. plansContext      → plans list (after products, separate section)
-//   7. followUpReminder  → LAST, so it's the final instruction GPT reads before answering
-//
-// WHY role: 'system' as const?
-//   OpenAI's API only accepts exactly: 'system' | 'user' | 'assistant'
-//   TypeScript without "as const" would type this as just "string" which is too broad.
-//   "as const" narrows the type to the exact literal value 'system'.
+//5.5  ASSEMBLE THE FINAL SYSTEM MESSAGE 
 
 const systemMessage = {
   role: 'system' as const,
@@ -409,40 +359,19 @@ const systemMessage = {
     + knowledgeContext         // 4. Relevant admin-taught Q&As (or empty)
     + productContext           // 5. The full filtered product inventory
     + plansContext             // 6. All available plans (or empty)
-    + followUpReminder,        // 7. Always end with a question (last instruction)
 };
 
-// ── WHAT GPT RECEIVES ────────────────────────────────────────────────────────
-// The systemMessage above becomes the first item in the messages array sent to OpenAI:
-//
-//   [systemMessage, ...conversationHistory]
-//
-//   [0] role:'system'    → the entire instruction manual built above
-//   [1] role:'assistant' → "Hello! I'm Zaina..."  (initial greeting)
-//   [2] role:'user'      → "Show me phones under BD 300"
-//   [3] role:'assistant' → "Here are 3 phones..."
-//   [4] role:'user'      → "Show me more"   ← newest message
-//
-// GPT reads them in order — system first, then the conversation.
-// This is how GPT knows it's Zaina, what products exist, and what rules to follow.
-// ================================================================================
 
-    // ── STEP 6: SAFETY CHECK — NO PRODUCTS FOUND ─────────────────────────────
-    // If a budget was set but the filter returned zero products,
-    // we skip GPT entirely and return a pre-written "sorry" message.
-    //
-    // WHY skip GPT here?
-    // If we call GPT with an empty inventory list, it might invent products
-    // that don't exist ("we have a great Zain Basic Phone for BD 45!").
-    // Returning a hardcoded message is safer and faster.
+    //STEP 6: SAFETY CHECK — NO PRODUCTS FOUND 
+  
     if (budgetWasSet && products.length === 0) {
       const noResultMsg = isMoreRequest
         ? `That's everything we have in that range. Would you like to explore a different price range or category?`
         : isMonthlyQuery
-          ? `I'm sorry, we don't have any products with a monthly installment ${budgetMin && budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `up to BD ${budgetMax}`}. Would you like to try a different range?`
-          : `I'm sorry, we don't have any products under BD ${budgetMax}. Would you like to explore a higher budget or a different category?`;
+          ? `I'm sorry, we don't have any products with a monthly installment ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `up to BD ${budgetMax ?? budgetMin}`}/month. Would you like to try a different range?`
+          : `I'm sorry, we don't have any products ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `under BD ${budgetMax ?? budgetMin}`}. Would you like to explore a different budget or category?`;
 
-      // Still save this conversation so admin can see it
+      //  save this conversation 
       const chatId = userData?.phone
         ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}`
         : `anon_${Date.now()}`;
@@ -458,48 +387,27 @@ const systemMessage = {
     }
 
 
-    // ── STEP 7: CALL OPENAI ───────────────────────────────────────────────────
-    // We combine [systemMessage, ...all previous messages] and send to GPT.
-    //
-    // GPT reads them in order:
-    //   [0] system    → "You are Zaina... [products] [plans] [rules]"  ← read first
-    //   [1] assistant → "Hello! I'm Zaina..."                          ← initial greeting
-    //   [2] user      → "Show me phones under BD 300"
-    //   [3] assistant → "Here are 3 phones..."
-    //   [4] user      → "Show me more"                                 ← newest message
-    //
-    // The assistant messages [1], [3] are GPT's previous replies stored in messages[].
-    // They are GPT's "memory" — without them GPT would forget the conversation.
+    // STEP 7: CALL OPENAI
+   
     const fullMessages = [systemMessage, ...messages];
 
-    // Streaming mode — sends text word by word (like ChatGPT typing effect)
-    // Currently stream=false by default, so this block is usually skipped
     if (stream) {
       const streamObj = await createStreamingChatCompletion(fullMessages, model);
       return new Response(streamObj.toReadableStream(), {
         headers: {
-          'Content-Type': 'text/event-stream', // tells browser: keep reading, more text coming
-          'Cache-Control': 'no-cache',          // don't cache live streaming data
-          'Connection': 'keep-alive',           // keep the connection open while streaming
+          'Content-Type': 'text/event-stream', 
+          'Cache-Control': 'no-cache',          
+          'Connection': 'keep-alive',          
         },
       });
     }
 
-    // Regular mode — wait for GPT to finish, then return the full reply at once
-    // temperature 0.3 = low randomness → consistent, predictable product recommendations
     const response = await createChatCompletion(fullMessages, model, 0.3);
 
-    // Extract just the text string from GPT's response object
-    // response.choices[0].message.content = "Here are 3 phones for you..."
-    // The ?. (optional chaining) prevents crash if choices is unexpectedly empty
     const assistantReply = response.choices[0]?.message?.content || '';
 
-
-    // ── STEP 8: DETECT IF GPT WAS CONFUSED ───────────────────────────────────
-    // Check if GPT's reply contains phrases that mean it couldn't answer properly.
-    // If yes → needsLearning = true → chat gets flagged in admin dashboard.
-    // Admin can then write the correct answer via "Teach AI" panel → saves to knowledge collection.
-    // Next time a similar question is asked, the knowledge doc will be injected into the system prompt.
+/*
+    //STEP 8: DETECT IF GPT WAS CONFUSED 
     const confusedPhrases = [
       /i('m| am) (not able|unable) to (help|answer|assist)/i,
       /that('s| is) (outside|beyond) (my|our)/i,
@@ -507,57 +415,42 @@ const systemMessage = {
       /i can'?t (help|answer|assist) (with )?that/i,
       /i'?m not sure (how to|what you|about that)/i,
     ];
-    // .some() = true if ANY one pattern matches — stops checking after first match
     const needsLearning = confusedPhrases.some(pattern => pattern.test(assistantReply));
 
 
-    // ── STEP 9: SAVE CONVERSATION TO FIREBASE ─────────────────────────────────
-    // Save the full conversation (including GPT's new reply) under the user's phone number.
-    // Using phone number as the ID means all conversations from the same user merge into one doc.
-    // merge:true = update existing fields only, never delete old messages.
+    // STEP 9: SAVE CONVERSATION TO FIREBASE 
     const chatId = userData?.phone
-      ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}` // e.g. "33312345_Ahmed_Ali"
-      : `anon_${Date.now()}`; // fallback for users who didn't register
+      ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}` 
+      : `anon_${Date.now()}`; 
 
     const chatData: Record<string, unknown> = {
       userData: userData || { name: 'Anonymous', phone: 'unknown' },
-      messages: [...messages, { role: 'assistant', content: assistantReply }], // full history + new reply
-      updatedAt: new Date(),   // used to sort chats by "most recent" in admin dashboard
-      needsLearning,           // true = amber flag in admin dashboard
+      messages: [...messages, { role: 'assistant', content: assistantReply }], 
+      updatedAt: new Date(),   
+      needsLearning,           
     };
 
-    // If GPT was confused, also save WHAT the user asked so admin knows what to teach
     if (needsLearning) {
-      chatData.needsLearningMsg = lastUserMessage; // the unanswered question
-      chatData.resolvedAt = null;                  // not resolved yet
+      chatData.needsLearningMsg = lastUserMessage; 
+      chatData.resolvedAt = null;                 
     }
 
-    // "Fire and forget" — no await, so we don't make the user wait for Firebase.
-    // The reply is returned immediately while Firebase saves in the background.
     db.collection('chats').doc(chatId).set(chatData, { merge: true })
-      .catch(err => console.error('Failed to save chat:', err));
+      .catch(err => console.error('Failed to save chat:', err)); 
 
+      */
 
-    // ── STEP 10: RETURN GPT'S REPLY TO THE FRONTEND ───────────────────────────
-    // page.tsx receives { message: "Here are 3 phones..." }
-    // It adds it to the screen AND stores it as role:'assistant' in the messages array.
-    // The NEXT time the user sends a message, this reply is included in messages[]
-    // sent back to this API — giving GPT memory of what it already said.
+    //STEP 10: RETURN GPT'S REPLY TO THE FRONTEND 
     return NextResponse.json({
-      message: assistantReply, // the actual text to display in the chat bubble
-      model: response.model,   // which model was used — "gpt-4o"
-      usage: response.usage,   // token count — useful for monitoring API costs
+      message: assistantReply, 
+      usage: response.usage,   
     });
 
   } catch (error: any) {
-    // ── ERROR HANDLER ─────────────────────────────────────────────────────────
-    // The try/catch wraps the ENTIRE function.
-    // If ANYTHING fails (Firebase down, OpenAI error, null reference, etc.)
-    // this catches it and returns a proper error response instead of crashing.
     console.error('Chat API error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to process chat request' },
-      { status: 500 } // 500 = internal server error
+      { status: 500 } 
     );
   }
 }
