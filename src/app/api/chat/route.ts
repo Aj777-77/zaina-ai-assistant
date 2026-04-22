@@ -73,7 +73,10 @@ RULES:
 5. If the user asks for screens, monitors, or displays (even for gaming), map the category to "tvs".
 6. A budget stated as a single number (e.g. "my budget is BD 30") always means MAX only — set min to null, max to that number. NEVER set min equal to max.
 7. If the user's LAST message does NOT mention a price, budget, or cost (e.g. they're just asking "what cases do you have?" or "show me tablets"), set "budget" to null. Do NOT carry forward a budget from earlier in the conversation when the user is simply browsing without re-stating a budget.
-8. OUTPUT STRICT JSON ONLY.`
+8. USE-CASE vs CATEGORY: When a user asks for a DEVICE for a USE CASE (e.g. "phone for gaming", "tablet for streaming", "laptop for work", "watch for fitness"), the category is the DEVICE TYPE, NOT the use case. So "phone for gaming" → "smartphones" (NOT "gaming"). The "gaming" category is reserved for gaming consoles/hardware only (PS5, Xbox, Nintendo).
+9. PAY CLOSE ATTENTION TO THE LATEST MESSAGE: The highest message number is the user's newest request. If they change their mind from an earlier message (e.g. from "ipad" to "iphone"), the new category MUST be extracted ("smartphones").
+10. MONTHLY INFERENCE FOR EXPENSIVE DEVICES: When category is "smartphones", "tablets", or "laptops" AND the user's budget max is BD 100 or less (e.g. "budget of 30 BD", "under 50 BD") without explicit "cash"/"full price"/"outright" wording, set "isMonthly": true. Reason: these devices always cost hundreds of BD in cash, so a small number MUST be a monthly installment budget. Only set isMonthly:false if they explicitly say "cash", "full price", "outright", or "no installment".
+11. OUTPUT STRICT JSON ONLY.`
         },
         {
           role: 'user',
@@ -96,6 +99,43 @@ RULES:
 }
 
 
+
+// HELPER 4.5 — HALLUCINATION DETECTOR
+// Scans an assistant reply for phone model names GPT is famous for hallucinating
+// (Galaxy S23/S24, Fold5/Flip5, iPhone 14/15/16, etc.) and returns any matches
+// that do NOT appear in the current inventory. Case-insensitive, tolerant of
+// spacing and minor formatting (e.g. "Galaxy S23" vs "GalaxyS23").
+function detectHallucinatedProducts(
+  reply: string,
+  inventory: Array<{ brand?: string; name?: string }>
+): string[] {
+  if (!reply) return [];
+
+  const inventoryText = inventory
+    .map(p => `${p.brand || ''} ${p.name || ''}`.toLowerCase().replace(/\s+/g, ''))
+    .join(' | ');
+
+  // Patterns cover the most common hallucinations. Narrow enough to avoid false
+  // positives on legitimate inventory (e.g. S25/S26/iPhone 17/Fold 7/Flip 7).
+  const suspectPatterns: RegExp[] = [
+    /\b(?:samsung\s+)?galaxy\s+s(?:2[0-4])(?:\s+(?:ultra|plus|fe|edge))?\b/gi,
+    /\b(?:samsung\s+)?galaxy\s+z?\s*fold\s?[3-6]\b/gi,
+    /\b(?:samsung\s+)?galaxy\s+z?\s*flip\s?[3-6]\b/gi,
+    /\b(?:apple\s+)?iphone\s+(?:1[0-6]|x(?:s|r)?|se)(?:\s+(?:pro|plus|max|mini))*\b/gi,
+  ];
+
+  const found: string[] = [];
+  for (const pattern of suspectPatterns) {
+    const matches = reply.match(pattern) || [];
+    for (const m of matches) {
+      const normalized = m.toLowerCase().replace(/\s+/g, '');
+      if (!inventoryText.includes(normalized)) {
+        found.push(m.trim());
+      }
+    }
+  }
+  return Array.from(new Set(found));
+}
 
  // HELPER 5 — CHECK IF A PRODUCT FITS THE BUDGET
 function isProductInBudget(
@@ -136,14 +176,31 @@ export async function POST(request: NextRequest) {
 
 
     //STEP 2: DETECT WHAT THE USER WANTS (AI-BASED INTENT PARSING)
-    
+
     const { category: requestedCategory, budget } = await analyzeUserIntent(userMessages);
 
-    // Unpack budget values — use null if not detected
     const budgetMin       = budget?.min  ?? null;
     const budgetMax       = budget?.max  ?? null;
-    const isMonthlyQuery  = budget?.isMonthly ?? false;
+    let   isMonthlyQuery  = budget?.isMonthly ?? false;
     const budgetWasSet    = budgetMin !== null || budgetMax !== null;
+
+    // Safety net: if the intent AI forgot rule 10, coerce isMonthly to true when
+    // the budget is implausibly low for a cash purchase of an expensive device.
+    // E.g. "budget of BD 30" for a phone/tablet/laptop is always a monthly
+    // installment budget in Bahrain — nothing in those categories costs BD 30 cash.
+    const expensiveDeviceCats = new Set(['smartphones', 'tablets', 'laptops']);
+    const lastMessageLower = lastUserMessage.toLowerCase();
+    const userExplicitlySaidCash = /\b(cash|full\s*price|outright|no\s*installment)\b/.test(lastMessageLower);
+    if (
+      !isMonthlyQuery &&
+      !userExplicitlySaidCash &&
+      requestedCategory &&
+      expensiveDeviceCats.has(requestedCategory) &&
+      budgetMax !== null &&
+      budgetMax <= 100
+    ) {
+      isMonthlyQuery = true;
+    }
 
 
     //STEP 3: FETCH + FILTER PRODUCTS FROM FIREBASE
@@ -261,7 +318,6 @@ Your role:
 
 const productContext = products.length > 0
   ? (() => {
-      // ── Remove duplicates 
       const unique = Array.from(
         new Map(products.map(p => [`${p.category}-${p.brand}-${p.name}`, p])).values()
       );
@@ -362,14 +418,25 @@ const systemMessage = {
 };
 
 
-    //STEP 6: SAFETY CHECK — NO PRODUCTS FOUND 
-  
-    if (budgetWasSet && products.length === 0) {
+    //STEP 6: SAFETY CHECK — NO PRODUCTS FOUND
+    // Fire whenever the category filter produced 0 matches, regardless of budget.
+    // Without this, GPT gets an empty inventory block and hallucinates popular
+    // products from its pre-training (e.g. iPhone 16, Galaxy S23/S25).
+
+    if (requestedCategory && products.length === 0) {
+      const categoryLabel =
+        requestedCategory === 'smartphones'  ? 'phones'
+      : requestedCategory === 'tvs'          ? 'TVs'
+      : requestedCategory === 'gaming'       ? 'gaming products'
+      : requestedCategory;
+
       const noResultMsg = isMoreRequest
         ? `That's everything we have in that range. Would you like to explore a different price range or category?`
-        : isMonthlyQuery
-          ? `I'm sorry, we don't have any products with a monthly installment ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `up to BD ${budgetMax ?? budgetMin}`}/month. Would you like to try a different range?`
-          : `I'm sorry, we don't have any products ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `under BD ${budgetMax ?? budgetMin}`}. Would you like to explore a different budget or category?`;
+        : budgetWasSet
+          ? isMonthlyQuery
+            ? `I'm sorry, we don't have any ${categoryLabel} with a monthly installment ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `up to BD ${budgetMax ?? budgetMin}`}/month. Would you like to try a different range?`
+            : `I'm sorry, we don't have any ${categoryLabel} ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `under BD ${budgetMax ?? budgetMin}`}. Would you like to explore a different budget or category?`
+          : `I'm sorry, we don't currently have any ${categoryLabel} in stock. Would you like to explore a different category?`;
 
       //  save this conversation 
       const chatId = userData?.phone
@@ -388,25 +455,63 @@ const systemMessage = {
 
 
     // STEP 7: CALL OPENAI
-   
-    const fullMessages = [systemMessage, ...messages];
+    //
+    // We duplicate the inventory into a SECOND system message placed AFTER the
+    // user/assistant history. GPT's attention is strongest on recent context,
+    // so repeating the inventory at the end dramatically reduces the chance it
+    // falls back to pre-trained product names (Galaxy S23, Fold5, iPhone 16…).
+    // Build the authoritative product-name list so the reminder can be explicit.
+    const inventoryNames = Array.from(
+      new Set(
+        products
+          .map(p => `${p.brand || ''} ${p.name || ''}`.trim())
+          .filter(Boolean)
+      )
+    );
+
+    const inventoryReminder = {
+      role: 'system' as const,
+      content:
+        'FINAL AUTHORITATIVE CHECK — READ BEFORE RESPONDING:\n' +
+        'You must ONLY recommend products from this exact list of names:\n' +
+        inventoryNames.map(n => `  • ${n}`).join('\n') +
+        '\n\nRULES:\n' +
+        '1. Any product name not in this list (e.g. Galaxy S23/S24, Fold5, Flip5, iPhone 14/15/16, or anything you remember from training data) MUST NOT appear in your response.\n' +
+        '2. USE-CASE REQUESTS: When the customer asks for a device for a USE CASE (e.g. "phone for gaming", "phone for photography", "tablet for streaming"), DO NOT say "we don\'t have a gaming phone" or "no phone is labeled for gaming". Instead, pick the best-fit devices from the list above and explain why they suit that use case (e.g. for gaming, recommend the highest-performance flagship phones; for photography, recommend phones with strong camera reputation). EVERY device in the list is a real phone/tablet — the use case is a preference, not a separate category.\n' +
+        '3. Verify every product name you type against this list — no exceptions.\n' +
+        '4. FORMATTING: NEVER use formatting stars/asterisks (* or **) in your response. Do not use them for bolding, bullet points, or italics. Respond with plain text only.',
+    };
+
+    const fullMessages = [systemMessage, ...messages, inventoryReminder];
 
     if (stream) {
       const streamObj = await createStreamingChatCompletion(fullMessages, model);
       return new Response(streamObj.toReadableStream(), {
         headers: {
-          'Content-Type': 'text/event-stream', 
-          'Cache-Control': 'no-cache',          
-          'Connection': 'keep-alive',          
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
         },
       });
     }
 
-    const response = await createChatCompletion(fullMessages, model, 0.3);
+    const response = await createChatCompletion(fullMessages, model, 0.4);
 
-    const assistantReply = response.choices[0]?.message?.content || '';
+    let assistantReply = response.choices[0]?.message?.content || '';
 
-/*
+    // STEP 7.5: HALLUCINATION GUARD
+    // Scan the reply for product model names that are NOT in inventory. If any
+    // slip through, replace the whole response with the safe "nothing matches"
+    // fallback rather than serving invented products to the customer.
+    const hallucinatedNames = detectHallucinatedProducts(assistantReply, products);
+    if (hallucinatedNames.length > 0) {
+      console.warn('[chat] Hallucination detected — replying with safe fallback. Invented:', hallucinatedNames);
+      const inventoryList = inventoryNames.slice(0, 5).map(n => `  • ${n}`).join('\n');
+      assistantReply =
+        `I want to make sure I only recommend what's actually in stock. Here are some of our current smartphones:\n${inventoryList}\n\nWould you like me to narrow these down by budget or feature (camera, battery, gaming)?`;
+    }
+
+
     //STEP 8: DETECT IF GPT WAS CONFUSED 
     const confusedPhrases = [
       /i('m| am) (not able|unable) to (help|answer|assist)/i,
@@ -438,7 +543,7 @@ const systemMessage = {
     db.collection('chats').doc(chatId).set(chatData, { merge: true })
       .catch(err => console.error('Failed to save chat:', err)); 
 
-      */
+      
 
     //STEP 10: RETURN GPT'S REPLY TO THE FRONTEND 
     return NextResponse.json({

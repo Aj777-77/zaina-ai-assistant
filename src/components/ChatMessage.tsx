@@ -23,7 +23,7 @@ export default function ChatMessage({ role, content, timestamp }: ChatMessagePro
             </div>
           )}
           <div className="flex-1">
-            <p className="text-sm whitespace-pre-wrap">{content}</p>
+            <p className="text-sm whitespace-pre-wrap">{content.replace(/\*+/g, '')}</p>
             {timestamp && (
               <p className={`text-xs mt-1 ${isUser ? 'text-purple-200' : 'text-zinc-500'}`}>
                 {timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}

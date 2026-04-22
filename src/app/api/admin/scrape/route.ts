@@ -76,6 +76,12 @@ export async function POST(request: NextRequest) {
       const results: { type: string; saved: number; errors: number; summary: Record<string, number> }[] = [];
 
       if (data.products) {
+        if (!data.products.items?.length) {
+          return NextResponse.json(
+            { success: false, error: 'Refusing to replace: the products preview is empty. Re-run the scrape and verify non-zero counts before confirming.' },
+            { status: 400 }
+          );
+        }
         await clearCollection('products');
         const productsRef = db.collection('products');
         let saved = 0, errors = 0;
@@ -102,6 +108,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (data.plans) {
+        if (!data.plans.items?.length) {
+          return NextResponse.json(
+            { success: false, error: 'Refusing to replace: the plans preview is empty. Re-run the scrape and verify non-zero counts before confirming.' },
+            { status: 400 }
+          );
+        }
         await clearCollection('plans');
         const plansRef = db.collection('plans');
         let saved = 0, errors = 0;

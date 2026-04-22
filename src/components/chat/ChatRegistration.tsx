@@ -58,7 +58,7 @@ export default function ChatRegistration({ onRegister }: ChatRegistrationProps) 
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder:text-zinc-600 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all outline-none shadow-inner"
-              placeholder="e.g. Ahmed Ali"
+              placeholder="e.g. Ali Juma"
             />
           </div>
           
