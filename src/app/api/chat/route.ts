@@ -4,7 +4,11 @@ import { getDb } from '@/lib/firebase';
 import { criticalRules } from '@/lib/criticalRules';
 
 
-// HELPER 1 — PRICE HELPER FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Helper 1 — Parse a BD price string into { amount, isMonthly }.
 function parseBD(text: string): { amount: number; isMonthly: boolean } | null {
   if (!text) return null;
   const isMonthly = /\/mo/i.test(text);
@@ -16,16 +20,14 @@ function parseBD(text: string): { amount: number; isMonthly: boolean } | null {
   };
 }
 
-
-// HELPER 2 — GET FULL PRICE
-
+// Helper 2 — Resolve a product's full cash price (converts monthly→cash+VAT if needed).
 function getFullPrice(product: any): number | null {
   const parsed = parseBD(product.price);
   if (!parsed) return null;
-  return parsed.isMonthly ? (parsed.amount * 24) * 1.1  : parsed.amount;
+  return parsed.isMonthly ? (parsed.amount * 24) * 1.1 : parsed.amount;
 }
 
-// HELPER 3 — GET MONTHLY PRICE
+// Helper 3 — Resolve a product's monthly installment price (if any).
 function getMonthlyPrice(product: any): number | null {
   const monthly = parseBD(product.monthlyPrice);
   if (monthly) return monthly.amount;
@@ -36,8 +38,7 @@ function getMonthlyPrice(product: any): number | null {
   return null;
 }
 
-// HELPER 4 — AI INTENT PARSER
-
+// Helper 4 — AI intent parser. Extracts category + budget from user messages.
 async function analyzeUserIntent(messages: string[]): Promise<{
   category: string | null;
   budget: { min: number | null; max: number | null; isMonthly: boolean } | null;
@@ -48,13 +49,13 @@ async function analyzeUserIntent(messages: string[]): Promise<{
     const conversation = [...messages].reverse().map((m, i) => `[Msg ${i + 1}]: ${m}`).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',  
-      temperature: 0.1,       
-      response_format: { type: 'json_object' }, // force JSON output
+      model: 'gpt-4o-mini',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
-          content: `You are an expert commerce search assistant. Extract the requested product category and budget constraints from the user's sequential messages. 
+          content: `You are an expert commerce search assistant. Extract the requested product category and budget constraints from the user's sequential messages.
 Return strictly a valid JSON object matching this exact shape:
 {
   "category": "smartphones" | "tablets" | "laptops" | "smartwatches" | "accessories" | "tvs" | "gaming" | null,
@@ -85,7 +86,6 @@ RULES:
       ]
     });
 
-    // Parse the JSON string GPT returned
     const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
     return {
       category: parsed.category || null,
@@ -98,46 +98,7 @@ RULES:
   }
 }
 
-
-
-// HELPER 4.5 — HALLUCINATION DETECTOR
-// Scans an assistant reply for phone model names GPT is famous for hallucinating
-// (Galaxy S23/S24, Fold5/Flip5, iPhone 14/15/16, etc.) and returns any matches
-// that do NOT appear in the current inventory. Case-insensitive, tolerant of
-// spacing and minor formatting (e.g. "Galaxy S23" vs "GalaxyS23").
-function detectHallucinatedProducts(
-  reply: string,
-  inventory: Array<{ brand?: string; name?: string }>
-): string[] {
-  if (!reply) return [];
-
-  const inventoryText = inventory
-    .map(p => `${p.brand || ''} ${p.name || ''}`.toLowerCase().replace(/\s+/g, ''))
-    .join(' | ');
-
-  // Patterns cover the most common hallucinations. Narrow enough to avoid false
-  // positives on legitimate inventory (e.g. S25/S26/iPhone 17/Fold 7/Flip 7).
-  const suspectPatterns: RegExp[] = [
-    /\b(?:samsung\s+)?galaxy\s+s(?:2[0-4])(?:\s+(?:ultra|plus|fe|edge))?\b/gi,
-    /\b(?:samsung\s+)?galaxy\s+z?\s*fold\s?[3-6]\b/gi,
-    /\b(?:samsung\s+)?galaxy\s+z?\s*flip\s?[3-6]\b/gi,
-    /\b(?:apple\s+)?iphone\s+(?:1[0-6]|x(?:s|r)?|se)(?:\s+(?:pro|plus|max|mini))*\b/gi,
-  ];
-
-  const found: string[] = [];
-  for (const pattern of suspectPatterns) {
-    const matches = reply.match(pattern) || [];
-    for (const m of matches) {
-      const normalized = m.toLowerCase().replace(/\s+/g, '');
-      if (!inventoryText.includes(normalized)) {
-        found.push(m.trim());
-      }
-    }
-  }
-  return Array.from(new Set(found));
-}
-
- // HELPER 5 — CHECK IF A PRODUCT FITS THE BUDGET
+// Helper 5 — Check whether a product falls inside a budget range.
 function isProductInBudget(
   product: any,
   min: number | null,
@@ -145,49 +106,47 @@ function isProductInBudget(
   isMonthly: boolean
 ): boolean {
   const price = isMonthly ? getMonthlyPrice(product) : getFullPrice(product);
-  if (price === null) return false; // product has no usable price → exclude it
+  if (price === null) return false;
 
-  if (min !== null && price < min) return false; // too cheap
-  if (max !== null && price > max) return false; // too expensive
+  if (min !== null && price < min) return false;
+  if (max !== null && price > max) return false;
   return true;
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN API HANDLER
-// ================================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
-
-    //STEP 1: RECEIVE REQUEST FROM FRONTEND 
 export async function POST(request: NextRequest) {
   try {
 
-   
+    // ── Step 1: Receive request from frontend ────────────────────────────────
     const body = await request.json();
     const { messages, userData, stream = false, model = 'gpt-4o' } = body;
 
-    const db = getDb(); 
+    const db = getDb();
 
     const userMessages: string[] = [...messages]
       .reverse()
       .filter((m: any) => m.role === 'user')
       .map((m: any) => m.content);
 
-    const lastUserMessage = userMessages[0] || ''; 
+    const lastUserMessage = userMessages[0] || '';
 
 
-    //STEP 2: DETECT WHAT THE USER WANTS (AI-BASED INTENT PARSING)
-
+    // ── Step 2: Detect what the user wants (AI-based intent parsing) ─────────
     const { category: requestedCategory, budget } = await analyzeUserIntent(userMessages);
 
-    const budgetMin       = budget?.min  ?? null;
-    const budgetMax       = budget?.max  ?? null;
-    let   isMonthlyQuery  = budget?.isMonthly ?? false;
-    const budgetWasSet    = budgetMin !== null || budgetMax !== null;
+    const budgetMin      = budget?.min ?? null;
+    const budgetMax      = budget?.max ?? null;
+    let   isMonthlyQuery = budget?.isMonthly ?? false;
+    const budgetWasSet   = budgetMin !== null || budgetMax !== null;
 
-    // Safety net: if the intent AI forgot rule 10, coerce isMonthly to true when
-    // the budget is implausibly low for a cash purchase of an expensive device.
-    // E.g. "budget of BD 30" for a phone/tablet/laptop is always a monthly
-    // installment budget in Bahrain — nothing in those categories costs BD 30 cash.
+    // Safety net: if the intent AI forgot rule 10, coerce isMonthly to true
+    // when the budget is implausibly low for a cash purchase of an expensive
+    // device. "Budget of BD 30" for a phone/tablet/laptop is always monthly
+    // in Bahrain — nothing in those categories costs BD 30 cash.
     const expensiveDeviceCats = new Set(['smartphones', 'tablets', 'laptops']);
     const lastMessageLower = lastUserMessage.toLowerCase();
     const userExplicitlySaidCash = /\b(cash|full\s*price|outright|no\s*installment)\b/.test(lastMessageLower);
@@ -203,13 +162,13 @@ export async function POST(request: NextRequest) {
     }
 
 
-    //STEP 3: FETCH + FILTER PRODUCTS FROM FIREBASE
+    // ── Step 3: Fetch + filter products from Firestore ───────────────────────
     const productsSnapshot = await db.collection('products').limit(500).get();
     let products = productsSnapshot.docs
       .map(doc => doc.data())
-      .filter(p => !/\btest\b/i.test(p.name || '')); 
+      .filter(p => !/\btest\b/i.test(p.name || ''));
 
-    //  Filter 1: Category 
+    // Filter 1 — Category.
     if (requestedCategory) {
       products = products.filter(p => {
         const cat  = `${p.category || ''} ${p.categoryLabel || ''}`.toLowerCase();
@@ -227,18 +186,18 @@ export async function POST(request: NextRequest) {
         if (requestedCategory === 'accessories')  return /access/i.test(cat);
         if (requestedCategory === 'tvs')          return /tv|television|screen|display|monitor|gaming|console/i.test(cat) || /tv|ps5|playstation|xbox|monitor/i.test(name);
         if (requestedCategory === 'gaming')       return /gaming|console|ps5|playstation|xbox|nintendo|tv|television|screen|monitor/i.test(cat) || /ps5|playstation|xbox|nintendo|tv|monitor/i.test(name);
-        return true; 
+        return true;
       });
     }
 
-    //Filter 2: Budget 
+    // Filter 2 — Budget.
     if (budgetWasSet) {
       products = products.filter(p =>
         isProductInBudget(p, budgetMin, budgetMax, isMonthlyQuery)
       );
     }
 
-    //Filter 3: Remove already-shown products 
+    // Filter 3 — Drop already-shown products when the user asks for more.
     const isMoreRequest = /\b(more|next|another|show more|what else|any other)\b/i.test(lastUserMessage);
     if (isMoreRequest) {
       const shownText = messages
@@ -253,8 +212,7 @@ export async function POST(request: NextRequest) {
     }
 
 
-    // ── STEP 4: FETCH PLANS, PERSONA, AND KNOWLEDGE DOCS FROM FIREBASE 
-
+    // ── Step 4: Fetch plans, persona, and knowledge docs from Firestore ──────
     const plansSnapshot = await db.collection('plans').limit(200).get();
     const plans = plansSnapshot.docs.map(doc => doc.data());
 
@@ -270,13 +228,12 @@ Your role:
 - Be conversational, friendly, and enthusiastic about technology
 - Always mention prices in Bahraini Dinars (BD)`;
 
-
     const baseSystemPrompt = personaPrompt + criticalRules;
 
     const knowledgeSnapshot = await db.collection('knowledge').limit(100).get();
     let knowledgeContext = '';
 
-    //Filter knowledge based on user's current query 
+    // Keyword-match knowledge docs against the user's current query + previous reply.
     if (!knowledgeSnapshot.empty) {
       const prevAssistantMsg = messages.length > 1 && messages[messages.length - 2].role === 'assistant'
         ? messages[messages.length - 2].content
@@ -293,13 +250,13 @@ Your role:
           const matchCount = queryWords.reduce((count, w) => docText.includes(w) ? count + 1 : count, 0);
           return { data, matchCount };
         })
-        .filter(doc => doc.matchCount > 0)    
-        .sort((a, b) => b.matchCount - a.matchCount) 
-        .slice(0, 4)                          
+        .filter(doc => doc.matchCount > 0)
+        .sort((a, b) => b.matchCount - a.matchCount)
+        .slice(0, 4)
         .map(doc => doc.data);
 
       if (relevantDocs.length > 0) {
-        const MAX_CHARS = 1000; 
+        const MAX_CHARS = 1000;
         knowledgeContext = '\n\n=== REFERENCE KNOWLEDGE BASE ===\n' +
           relevantDocs.map(data => {
             const body = (data.content || '').slice(0, MAX_CHARS);
@@ -312,117 +269,92 @@ Your role:
     }
 
 
-//STEP 5 — BUILD THE SYSTEM MESSAGE
+    // ── Step 5: Build the system message ─────────────────────────────────────
 
-//5.1  PRODUCT CONTEXT 
+    // 5.1 — Product context: deduped, grouped by category, budget-tagged.
+    const productContext = products.length > 0
+      ? (() => {
+          const unique = Array.from(
+            new Map(products.map(p => [`${p.category}-${p.brand}-${p.name}`, p])).values()
+          );
 
-const productContext = products.length > 0
-  ? (() => {
-      const unique = Array.from(
-        new Map(products.map(p => [`${p.category}-${p.brand}-${p.name}`, p])).values()
-      );
+          const grouped: Record<string, typeof unique> = {};
+          unique.forEach(p => {
+            const key = p.categoryLabel || p.category || 'Other';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(p);
+          });
 
-      // Group by category 
-      const grouped: Record<string, typeof unique> = {};
-      unique.forEach(p => {
-        const key = p.categoryLabel || p.category || 'Other';
-        if (!grouped[key]) grouped[key] = [];   // create array if first product in this category
-        grouped[key].push(p);
-      });
+          const tag = budgetWasSet ? ' [CONFIRMED WITHIN CUSTOMER BUDGET]' : '';
 
-// 5.2 Budget tag 
-      const tag = budgetWasSet ? ' [CONFIRMED WITHIN CUSTOMER BUDGET]' : '';
+          return '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n' +
+            Object.entries(grouped).map(([cat, items]) =>
+              `[${cat}]\n` + items.map(p =>
+                `  • ${p.brand} ${p.name} | Price: ${p.price}` +
+                (p.monthlyPrice && p.monthlyPrice !== p.price ? ` | Monthly: ${p.monthlyPrice}` : '') +
+                (p.savings ? ` | Offer: ${p.savings}` : '') +
+                tag
+              ).join('\n')
+            ).join('\n\n') +
+            '\n=== END OF INVENTORY ===\n\nCRITICAL ANTI-HALLUCINATION RULE: You must ONLY recommend products, prices, and plans that are explicitly listed above in the INVENTORY. NEVER invent, guess, or pull products from your general pre-trained knowledge. If a user asks for a device not in the list, explicitly tell them it is not currently in stock.';
+        })()
+      : '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n[NO PRODUCTS MATCH — DO NOT INVENT ANY.]\n=== END OF INVENTORY ===';
 
-      // ── Build the text string 
-      return '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n' +
-        Object.entries(grouped).map(([cat, items]) =>
-          `[${cat}]\n` + items.map(p =>
-            `  • ${p.brand} ${p.name} | Price: ${p.price}` +
-            (p.monthlyPrice && p.monthlyPrice !== p.price ? ` | Monthly: ${p.monthlyPrice}` : '') +
-            (p.savings ? ` | Offer: ${p.savings}` : '') +
-            tag
-          ).join('\n')
-        ).join('\n\n') +
-        '\n=== END OF INVENTORY ===\n\nCRITICAL ANTI-HALLUCINATION RULE: You must ONLY recommend products, prices, and plans that are explicitly listed above in the INVENTORY. NEVER invent, guess, or pull products from your general pre-trained knowledge. If a user asks for a device not in the list, explicitly tell them it is not currently in stock.';
+    // 5.2 — Plans context: grouped by category/subCategory, flagged for unlimited data.
+    const plansContext = plans.length > 0
+      ? (() => {
+          const grouped: Record<string, typeof plans> = {};
+          plans.forEach(p => {
+            const key = `${p.category} / ${p.subCategory}`;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(p);
+          });
 
-    })()
+          const unlimitedPlans = plans.filter(p => /unlimited/i.test(p.data || ''));
+          const unlimitedNote = unlimitedPlans.length > 0
+            ? `\n⚠️ UNLIMITED PLANS: ${unlimitedPlans.map(p => p.name).join(', ')} — recommend first for unlimited requests.`
+            : `\nNOTE: No plans have Unlimited data. Do not claim otherwise.`;
 
-  : '\n\n=== AVAILABLE PRODUCTS IN INVENTORY ===\n[NO PRODUCTS MATCH — DO NOT INVENT ANY.]\n=== END OF INVENTORY ===';
+          return '\n\n=== AVAILABLE PLANS ===' + unlimitedNote + '\n' +
+            Object.entries(grouped).map(([group, groupPlans]) =>
+              `[${group}]\n` + groupPlans.map(p =>
+                `  • ${p.name} – ${p.price}/month` +
+                (p.data   ? ` | Data: ${p.data}`     : '') +
+                (p.banner ? ` | Offer: ${p.banner}`  : '')
+              ).join('\n')
+            ).join('\n\n') +
+            '\n=== END OF PLANS ===';
+        })()
+      : '';
 
+    // 5.3 — Budget note (monthly vs cash framing, or empty).
+    const budgetNote = budgetWasSet
+      ? isMonthlyQuery
+        ? `\n\nNOTE: Customer's monthly budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}/month. Products are pre-filtered by monthly price. Plans are NOT pre-filtered — if customer wants phone + plan, do the math: (Phone Monthly + Plan Monthly) must not exceed total budget.`
+        : `\n\nNOTE: Customer's cash budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}. Products are pre-filtered. Do NOT suggest anything outside this list.`
+      : '';
 
-//5.3  PLANS CONTEXT 
-const plansContext = plans.length > 0
-  ? (() => {
+    // 5.4 — More-options note (pagination instruction for GPT).
+    const moreNote = isMoreRequest
+      ? `\n\nNOTE: Customer wants MORE options. Inventory is updated to show only products not yet shown. Present up to 3. If more remain, say so.`
+      : `\n\nNOTE: There are ${products.length} product(s) in the inventory below. Show up to 3. If more remain, let the customer know.`;
 
-      //Group plans by category 
-      const grouped: Record<string, typeof plans> = {};
-      plans.forEach(p => {
-        const key = `${p.category} / ${p.subCategory}`;
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(p);
-      });
-
-      //Detect unlimited plans 
-      const unlimitedPlans = plans.filter(p => /unlimited/i.test(p.data || ''));
-      const unlimitedNote = unlimitedPlans.length > 0
-        ? `\n⚠️ UNLIMITED PLANS: ${unlimitedPlans.map(p => p.name).join(', ')} — recommend first for unlimited requests.`
-        : `\nNOTE: No plans have Unlimited data. Do not claim otherwise.`;
-
-      // ── Build the text string 
-      return '\n\n=== AVAILABLE PLANS ===' + unlimitedNote + '\n' +
-        Object.entries(grouped).map(([group, groupPlans]) =>
-          `[${group}]\n` + groupPlans.map(p =>
-            `  • ${p.name} – ${p.price}/month` +
-            (p.data   ? ` | Data: ${p.data}`     : '') +
-            (p.banner ? ` | Offer: ${p.banner}`  : '')
-          ).join('\n')
-        ).join('\n\n') +
-        '\n=== END OF PLANS ===';
-
-    })()
-
-  : '';
-
-
-//5.4  BUDGET NOTE 
-
-const budgetNote = budgetWasSet
-  ? isMonthlyQuery
-    // Monthly budget note
-    ? `\n\nNOTE: Customer's monthly budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}/month. Products are pre-filtered by monthly price. Plans are NOT pre-filtered — if customer wants phone + plan, do the math: (Phone Monthly + Plan Monthly) must not exceed total budget.`
-    // Cash budget note
-    : `\n\nNOTE: Customer's cash budget is ${budgetMin ? `BD ${budgetMin} to ` : 'up to '}BD ${budgetMax}. Products are pre-filtered. Do NOT suggest anything outside this list.`
-  // No budget detected → add nothing
-  : '';
+    // 5.5 — Assemble the final system message.
+    const systemMessage = {
+      role: 'system' as const,
+      content: baseSystemPrompt    // 1. Who Zaina is + all hardcoded rules
+        + budgetNote               // 2. Budget context (or empty if no budget)
+        + moreNote                 // 3. Product count + show-more instruction
+        + knowledgeContext         // 4. Relevant admin-taught Q&As (or empty)
+        + productContext           // 5. The full filtered product inventory
+        + plansContext             // 6. All available plans (or empty)
+    };
 
 
-//5.4  MORE NOTE 
-
-const moreNote = isMoreRequest
-  ? `\n\nNOTE: Customer wants MORE options. Inventory is updated to show only products not yet shown. Present up to 3. If more remain, say so.`
-  : `\n\nNOTE: There are ${products.length} product(s) in the inventory below. Show up to 3. If more remain, let the customer know.`;
-
-
-
-
-//5.5  ASSEMBLE THE FINAL SYSTEM MESSAGE 
-
-const systemMessage = {
-  role: 'system' as const,
-  content: baseSystemPrompt    // 1. Who Zaina is + all hardcoded rules
-    + budgetNote               // 2. Budget context (or empty if no budget)
-    + moreNote                 // 3. Product count + show-more instruction
-    + knowledgeContext         // 4. Relevant admin-taught Q&As (or empty)
-    + productContext           // 5. The full filtered product inventory
-    + plansContext             // 6. All available plans (or empty)
-};
-
-
-    //STEP 6: SAFETY CHECK — NO PRODUCTS FOUND
-    // Fire whenever the category filter produced 0 matches, regardless of budget.
+    // ── Step 6: Safety check — no products found ─────────────────────────────
+    // Fires whenever a category was requested but 0 matches survived filtering.
     // Without this, GPT gets an empty inventory block and hallucinates popular
-    // products from its pre-training (e.g. iPhone 16, Galaxy S23/S25).
-
+    // products from its pre-training (iPhone 16, Galaxy S23/S25, etc.).
     if (requestedCategory && products.length === 0) {
       const categoryLabel =
         requestedCategory === 'smartphones'  ? 'phones'
@@ -438,7 +370,6 @@ const systemMessage = {
             : `I'm sorry, we don't have any ${categoryLabel} ${budgetMin !== null && budgetMax !== null && budgetMin !== budgetMax ? `between BD ${budgetMin} and BD ${budgetMax}` : `under BD ${budgetMax ?? budgetMin}`}. Would you like to explore a different budget or category?`
           : `I'm sorry, we don't currently have any ${categoryLabel} in stock. Would you like to explore a different category?`;
 
-      //  save this conversation 
       const chatId = userData?.phone
         ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}`
         : `anon_${Date.now()}`;
@@ -454,13 +385,11 @@ const systemMessage = {
     }
 
 
-    // STEP 7: CALL OPENAI
-    //
-    // We duplicate the inventory into a SECOND system message placed AFTER the
-    // user/assistant history. GPT's attention is strongest on recent context,
-    // so repeating the inventory at the end dramatically reduces the chance it
-    // falls back to pre-trained product names (Galaxy S23, Fold5, iPhone 16…).
-    // Build the authoritative product-name list so the reminder can be explicit.
+    // ── Step 7: Call OpenAI ──────────────────────────────────────────────────
+    // The inventory is duplicated into a SECOND system message placed AFTER
+    // the user/assistant history. GPT's attention is strongest on recent
+    // context, so repeating the inventory at the end dramatically reduces
+    // the chance it falls back to pre-trained product names.
     const inventoryNames = Array.from(
       new Set(
         products
@@ -496,23 +425,10 @@ const systemMessage = {
     }
 
     const response = await createChatCompletion(fullMessages, model, 0.4);
-
-    let assistantReply = response.choices[0]?.message?.content || '';
-
-    // STEP 7.5: HALLUCINATION GUARD
-    // Scan the reply for product model names that are NOT in inventory. If any
-    // slip through, replace the whole response with the safe "nothing matches"
-    // fallback rather than serving invented products to the customer.
-    const hallucinatedNames = detectHallucinatedProducts(assistantReply, products);
-    if (hallucinatedNames.length > 0) {
-      console.warn('[chat] Hallucination detected — replying with safe fallback. Invented:', hallucinatedNames);
-      const inventoryList = inventoryNames.slice(0, 5).map(n => `  • ${n}`).join('\n');
-      assistantReply =
-        `I want to make sure I only recommend what's actually in stock. Here are some of our current smartphones:\n${inventoryList}\n\nWould you like me to narrow these down by budget or feature (camera, battery, gaming)?`;
-    }
+    const assistantReply = response.choices[0]?.message?.content || '';
 
 
-    //STEP 8: DETECT IF GPT WAS CONFUSED 
+    // ── Step 8: Detect if GPT was confused (flag for admin review) ───────────
     const confusedPhrases = [
       /i('m| am) (not able|unable) to (help|answer|assist)/i,
       /that('s| is) (outside|beyond) (my|our)/i,
@@ -523,39 +439,38 @@ const systemMessage = {
     const needsLearning = confusedPhrases.some(pattern => pattern.test(assistantReply));
 
 
-    // STEP 9: SAVE CONVERSATION TO FIREBASE 
+    // ── Step 9: Save conversation to Firestore ───────────────────────────────
     const chatId = userData?.phone
-      ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}` 
-      : `anon_${Date.now()}`; 
+      ? `${userData.phone}_${(userData.name || '').replace(/\s+/g, '_')}`
+      : `anon_${Date.now()}`;
 
     const chatData: Record<string, unknown> = {
       userData: userData || { name: 'Anonymous', phone: 'unknown' },
-      messages: [...messages, { role: 'assistant', content: assistantReply }], 
-      updatedAt: new Date(),   
-      needsLearning,           
+      messages: [...messages, { role: 'assistant', content: assistantReply }],
+      updatedAt: new Date(),
+      needsLearning,
     };
 
     if (needsLearning) {
-      chatData.needsLearningMsg = lastUserMessage; 
-      chatData.resolvedAt = null;                 
+      chatData.needsLearningMsg = lastUserMessage;
+      chatData.resolvedAt = null;
     }
 
     db.collection('chats').doc(chatId).set(chatData, { merge: true })
-      .catch(err => console.error('Failed to save chat:', err)); 
+      .catch(err => console.error('Failed to save chat:', err));
 
-      
 
-    //STEP 10: RETURN GPT'S REPLY TO THE FRONTEND 
+    // ── Step 10: Return GPT's reply to the frontend ──────────────────────────
     return NextResponse.json({
-      message: assistantReply, 
-      usage: response.usage,   
+      message: assistantReply,
+      usage: response.usage,
     });
 
   } catch (error: any) {
     console.error('Chat API error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to process chat request' },
-      { status: 500 } 
+      { status: 500 }
     );
   }
 }

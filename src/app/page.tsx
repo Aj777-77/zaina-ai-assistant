@@ -109,20 +109,16 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950">
+    <div className="flex flex-col h-screen bg-zinc-950 relative">
       {/* Header */}
-      <header className="bg-purple-600 text-white shadow-lg z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+      <header className="absolute top-0 w-full text-white z-50 bg-transparent pointer-events-none">
+        <div className="w-full px-6 py-5 lg:px-10 lg:py-8 pointer-events-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Image src={ZainLogo} alt="Zain Logo" className="h-9 w-auto object-contain" priority />
-              <div>
-                <h1 className="text-xl font-bold">Zaina AI Assistant</h1>
-                <p className="text-sm text-purple-100">Zain Bahrain Shopping Assistant</p>
-              </div>
             </div>
             {isRegistered && userData && (
-              <div className="text-sm bg-purple-700/50 px-3 py-1.5 rounded-full border border-purple-500/50">
+              <div className="text-sm bg-white/5 px-4 py-2 rounded-full border border-white/10 backdrop-blur-md text-zinc-200 font-medium shadow-sm">
                 Hello, {userData.name}!
               </div>
             )}
@@ -136,7 +132,7 @@ export default function Home() {
       ) : (
         <>
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pt-20">
             <div className="max-w-4xl mx-auto px-4 py-6">
               {messages.map((message, index) => (
                 <ChatMessage
