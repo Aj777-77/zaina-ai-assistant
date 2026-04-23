@@ -62,7 +62,7 @@ export default function ChatRegistration({ onRegister }: ChatRegistrationProps) 
   };
 
   return (
-    <div className="relative flex flex-col lg:flex-row h-full w-full bg-transparent font-sans overflow-y-auto">
+    <div className="relative flex flex-col lg:flex-row h-full w-full bg-transparent font-sans overflow-hidden">
       {/* Ambient background glow */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute top-0 left-1/4 h-[32rem] w-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-600/20 blur-[120px]" />
@@ -70,24 +70,24 @@ export default function ChatRegistration({ onRegister }: ChatRegistrationProps) 
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(139,92,246,0.08),transparent_50%)]" />
       </div>
 
-      {/* Hero panel */}
-      <div className="relative flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-16 py-10 lg:py-20">
-        <div className="max-w-xl mx-auto lg:mx-0 text-center lg:text-left">
-          <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-2 mt-10 lg:mt-0">
+      {/* Hero panel — desktop only */}
+      <div className="relative hidden lg:flex flex-1 flex-col justify-center px-10 lg:px-16 py-10">
+        <div className="max-w-xl text-left">
+          <h1 className="text-5xl lg:text-6xl xl:text-7xl font-bold text-white tracking-tight leading-[1.05] mb-2">
             Meet{' '}
             <span className="bg-linear-to-r from-purple-300 via-fuchsia-400 to-indigo-400 bg-clip-text text-transparent">
               Zaina
             </span>
           </h1>
-          <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-zinc-400/80 mb-6">
+          <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-zinc-400/80 mb-5">
             Powered by Zain Bahrain
           </p>
 
-          <p className="text-base sm:text-lg lg:text-xl text-zinc-400 leading-relaxed mb-8 lg:mb-10 max-w-lg mx-auto lg:mx-0">
+          <p className="text-base lg:text-lg text-zinc-400 leading-relaxed mb-8 max-w-lg">
             Your AI shopping concierge for Zain Bahrain. Find the perfect phone, plan, or bundle in seconds — just ask.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto lg:mx-0">
+          <div className="grid grid-cols-3 gap-3 max-w-2xl">
             <Feature icon={<PhoneIcon />} label="Compare phones" hint="Side-by-side specs & prices" />
             <Feature icon={<WifiIcon />} label="Find a plan" hint="Mobile, fiber & 5G home" />
             <Feature icon={<SparkleIcon />} label="Smart picks" hint="Tailored to your budget" />
@@ -95,77 +95,120 @@ export default function ChatRegistration({ onRegister }: ChatRegistrationProps) 
         </div>
       </div>
 
-      {/* Form panel */}
-      <div className="relative flex-1 flex items-center justify-center px-6 sm:px-10 lg:px-12 py-10 lg:py-20">
+      {/* Form panel — conversational style */}
+      <div className="relative flex-1 flex items-center justify-center px-6 sm:px-10 lg:px-12 py-6 lg:py-10 min-h-0">
         <div className="w-full max-w-md">
-          <div className="relative bg-black/20 backdrop-blur-3xl border border-white/10 rounded-3xl p-7 sm:p-8 shadow-[0_0_60px_-15px_rgba(0,0,0,0.5)]">
-            <div className="absolute -top-px left-10 right-10 h-px bg-linear-to-r from-transparent via-purple-500/50 to-transparent" />
-
-            <div className="mb-7 flex flex-col items-center text-center sm:items-start sm:text-left">
-              <div className="w-16 h-16 bg-linear-to-br from-purple-500/80 to-indigo-600/80 backdrop-blur-md rounded-2xl flex items-center justify-center p-3 mb-5 shadow-xl shadow-purple-900/30 border border-white/20">
-                <Image src={ZainLogo} alt="Zain Logo" className="w-full h-full object-contain drop-shadow-md" />
+          {/* Chat header */}
+          <div className="flex items-center gap-3 mb-5 px-1">
+            <div className="relative">
+              <div className="w-11 h-11 bg-linear-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center p-2.5 shadow-lg shadow-purple-900/40 ring-2 ring-white/10">
+                <Image src={ZainLogo} alt="Zaina" className="w-full h-full object-contain" />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Get started</h2>
-              <p className="text-base text-zinc-300">No signup. Just tell us who you are and start chatting.</p>
+              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full ring-2 ring-black animate-pulse" />
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {error && (
-                <div className="flex items-start gap-2.5 bg-red-950/40 text-red-300 px-4 py-3 rounded-xl text-sm border border-red-900/50">
-                  <AlertIcon />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div>
-                <label htmlFor="name" className="block text-xs font-semibold uppercase tracking-widest text-zinc-300 mb-2.5 ml-1">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-4 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-zinc-500 focus:bg-white/10 focus:ring-2 focus:ring-purple-400/50 focus:border-purple-400/50 transition-all duration-300 outline-none backdrop-blur-md"
-                  placeholder="Ali Juma"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="phone" className="block text-xs font-semibold uppercase tracking-widest text-zinc-300 mb-2.5 ml-1">
-                  Phone Number
-                </label>
-                <div className="flex rounded-xl overflow-hidden bg-white/5 border border-white/10 focus-within:bg-white/10 focus-within:ring-2 focus-within:ring-purple-400/50 focus-within:border-purple-400/50 transition-all duration-300 backdrop-blur-md">
-                  <span className="inline-flex items-center px-4 bg-black/20 text-zinc-400 text-sm font-semibold border-r border-white/5">
-                    +973
-                  </span>
-                  <input
-                    type="tel"
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="flex-1 px-4 py-4 bg-transparent text-white placeholder:text-zinc-500 outline-none"
-                    placeholder="3X XXX XXX"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="group w-full flex items-center justify-center gap-2.5 bg-linear-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white font-bold py-4 px-6 rounded-xl shadow-[0_0_30px_-5px_rgba(168,85,247,0.4)] hover:shadow-[0_0_40px_-5px_rgba(168,85,247,0.6)] transition-all duration-300 active:scale-[0.98] border border-white/20 mt-4"
-              >
-                Start chatting
-                <span className="transition-transform duration-300 group-hover:translate-x-1">
-                  <ArrowIcon />
-                </span>
-              </button>
-            </form>
+            <div>
+              <h2 className="text-base font-bold text-white tracking-tight">Zaina</h2>
+              <p className="text-xs text-emerald-400/90 font-medium flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                Online · Ready to help
+              </p>
+            </div>
           </div>
 
-          <p className="mt-8 text-center text-xs text-zinc-500 font-medium tracking-wide">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Greeting bubble from Zaina */}
+            <ZainaBubble delay="0ms">
+              <p className="text-[15px] leading-relaxed">
+                Hey there <span className="inline-block animate-wave origin-[70%_70%]">👋</span>
+              </p>
+              <p className="text-[15px] leading-relaxed mt-1">
+                I&apos;m Zaina, your Zain Bahrain concierge. Before we start — what should I call you?
+              </p>
+            </ZainaBubble>
+
+            {/* User reply: name */}
+            <UserReply>
+              <input
+                type="text"
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-transparent text-white placeholder:text-white/50 outline-none text-[15px] font-medium"
+                placeholder="Type your name…"
+                autoFocus
+              />
+            </UserReply>
+
+            {/* Follow-up bubble from Zaina */}
+            <ZainaBubble delay="150ms">
+              <p className="text-[15px] leading-relaxed">
+                Perfect. And your phone number, so I can pick up where we left off next time?
+              </p>
+            </ZainaBubble>
+
+            {/* User reply: phone */}
+            <UserReply>
+              <div className="flex items-center gap-2 w-full">
+                <span className="text-white/70 text-[15px] font-semibold shrink-0">+973</span>
+                <span className="h-5 w-px bg-white/20" />
+                <input
+                  type="tel"
+                  id="phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="flex-1 bg-transparent text-white placeholder:text-white/50 outline-none text-[15px] font-medium tracking-wide"
+                  placeholder="3X XXX XXX"
+                />
+              </div>
+            </UserReply>
+
+            {error && (
+              <div className="flex items-start gap-2.5 bg-red-950/40 text-red-300 px-4 py-3 rounded-2xl text-sm border border-red-900/50 ml-12">
+                <AlertIcon />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Send button — purple glow */}
+            <button
+              type="submit"
+              className="group relative w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 px-6 rounded-2xl border border-purple-400/40 shadow-[0_0_30px_rgba(168,85,247,0.45),0_0_60px_rgba(168,85,247,0.25)] hover:shadow-[0_0_40px_rgba(168,85,247,0.65),0_0_90px_rgba(168,85,247,0.4)] transition-all duration-300 active:scale-[0.98] overflow-hidden mt-2"
+            >
+              <span className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(216,180,254,0.35),transparent_70%)] opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <span className="relative">Send & start chatting</span>
+              <span className="relative transition-transform duration-300 group-hover:translate-x-1">
+                <ArrowIcon />
+              </span>
+            </button>
+          </form>
+
+          <p className="mt-4 text-center text-[11px] text-zinc-500 font-medium tracking-wide">
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ZainaBubble({ children, delay = '0ms' }: { children: React.ReactNode; delay?: string }) {
+  return (
+    <div className="flex items-end gap-2.5 animate-bubble-in" style={{ animationDelay: delay }}>
+      <div className="w-8 h-8 shrink-0 bg-linear-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center p-1.5 shadow-md shadow-purple-900/30 ring-1 ring-white/10">
+        <Image src={ZainLogo} alt="" className="w-full h-full object-contain" />
+      </div>
+      <div className="relative bg-white/6 backdrop-blur-md border border-white/10 text-zinc-100 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%] shadow-lg shadow-black/20">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function UserReply({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-end animate-bubble-in pl-10" style={{ animationDelay: '75ms' }}>
+      <div className="group relative min-w-[70%] max-w-[85%] bg-purple-500/15 backdrop-blur-md border border-purple-400/30 rounded-2xl rounded-br-md px-4 py-3 shadow-lg shadow-purple-900/20 hover:bg-purple-500/20 hover:border-purple-400/50 focus-within:bg-purple-500/25 focus-within:border-purple-300/70 focus-within:shadow-[0_0_30px_-5px_rgba(168,85,247,0.4)] transition-all duration-200">
+        {children}
       </div>
     </div>
   );
